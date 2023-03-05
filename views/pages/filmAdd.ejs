@@ -1,0 +1,13 @@
+<%- include('../header') %>
+<h1>Add new Film</h1>
+<hr>
+<form action="/films/add" method="post" class="form">
+    <label for="filmName">Film Name</label>
+    <input type="text" name="FilmName" placeholder="Enter name of the film ..." class="form-control" id="filmName">
+    <label for="releaseYear">Release Year</label>
+    <input type="number" name="releaseYear" class="form-control" id="releaseYear">
+    <label for="filmURL">Film URL</label>
+    <input type="text" name="FilmURL" placeholder="Enter download link" class="form-control" id="filmURL">
+    <button type="submit" class="btn btn-primary">Submit</button>
+</form>
+<%- include('../footer') %>

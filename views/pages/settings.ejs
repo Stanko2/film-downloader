@@ -1,0 +1,14 @@
+<%- include('../header') -%>
+<h1>Settings</h1>
+<hr>
+    <form action="/settings/update" method="post" class="form">
+        <label class="form-label" for="filmPath">Films library path</label>
+        <input class="form-control" type="text" name="filmsPath" id="filmPath" value="<%= filmsPath %>">
+        <label class="form-label" for="filmPath">Series library path</label>
+        <input class="form-control" type="text" name="seriesPath" id="seriesPath" value="<%= seriesPath %>" >
+        <label class="form-label" for="downloadCron">Download Interval</label>
+        <input class="form-control" type="text" name="downloadCron" id="downloadCron" value="<%= downloadCron %>">
+        <button type="submit" class="btn block btn-primary">Save</button>
+    </form>
+    
+<%- include('../footer') -%>

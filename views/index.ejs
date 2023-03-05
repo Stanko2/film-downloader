@@ -1,0 +1,33 @@
+<%- include('header') -%>
+<h1>KODI library manager</h1>
+<p>Helper for your KODI film library. You can schedule film download or diagnose films, 
+    that KODI scraper hasn't found</p>
+<h3><%- Downloads.length %> Scheduled downloads</h3>
+<hr class="mb-4">
+<ul class="list-group">
+    <% for(const download of Downloads) { %>
+        <li class="list-group-item list-group-item-<%- stateMap[download.state] %>">
+            <div class="row">
+                <p class="col-8"><%- download.dest %> <span class=" badge text-bg-<%- stateMap[download.state] %>"><%- download.state %></span></p>
+                <% if (download.state == 'scheduled') { %>
+                    <form method="post" action="/<%- download.id %>/download" class="col-4">
+                        <button type="submit" class="btn btn-primary w-100">Start Now</button>
+                    </form>
+                <% } %>
+            </div>
+        </li>
+    <% } %>
+</ul>
+
+<h3><%- complete.length %> Completed downloads</h3>
+<hr>
+<ul class="list-group">
+    <% for(const download of complete) { %>
+        <li class="list-group-item list-group-item-success">
+            <div class="row">
+                <p class="col-8"><%- download.dest %></p>
+            </div>
+        </li>
+    <% } %>
+</ul>
+<%- include('footer') -%>

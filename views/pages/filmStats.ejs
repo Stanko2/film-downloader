@@ -1,0 +1,19 @@
+<%- include('../header') %>
+<h1><%- film.name %></h1>
+<hr>
+<p><%- film.streams.length %> Sources found</p>
+<ul class="list-group">
+    <% film.streams.forEach((stream, i) => { %>
+        <li class="card">
+            <div class="card-header">Source #<%- i %></div>
+            <div class="card-body">
+                <h6>Name: <%- stream.name %></h6>
+                <p>Size: <%- stream.metadata.size %></p>
+                <p>Bit rate: <%- stream.metadata.bit_rate %></p>
+                <p>Resolution: <%- stream.resolution.width %>x<%- stream.resolution.height %></p>
+                <p>Duration: <%- stream.metadata.duration %></p>
+            </div>
+        </li>
+    <% }) %>
+</ul>
+<%- include('../footer') %>
