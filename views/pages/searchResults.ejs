@@ -1,0 +1,19 @@
+<%- include('../header.ejs') %>
+<h1>Search results for "<%= query %>":</h1>
+<hr>
+<div class="d-flex flex-wrap justify-center">
+    <% result.forEach(video => { %>
+        <div class="card" style="width: 220px;">
+            <img class="card-img-top" src="https://www.themoviedb.org/t/p/w220_and_h330_face<%= video.backdrop_path %>" height="330" width="220">
+            <div class="card-body">
+                <h3 class="card-title"><%- video.title || video.name %></h3>
+                <% if (movie) { %>
+                    <a class="btn btn-primary" href="/films/download/<%= video.id %>">Select</a>
+                <% } else { %>
+                    <a class="btn btn-primary" href="/series/download/<%= video.id %>">Select</a>
+                <% } %>
+            </div>
+        </div>
+    <% }); %>
+    </div>
+<%- include('../footer.ejs') %>

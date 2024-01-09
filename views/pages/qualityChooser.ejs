@@ -1,0 +1,31 @@
+<%- include('../header') %>
+<h1>Download <%- title %></h1>
+<hr>
+<div class="row">
+    <div class="col-4">
+        <img src="https://www.themoviedb.org/t/p/w220_and_h330_face<%= banner %>" class="w-100">
+    </div>
+    <div class="col-8">
+        <form action="<%= postUrl  %>" method="post" class="form">
+            <h3>Quality</h3>
+            <% qualities.forEach(quality => { %>
+                <div class="form-check">
+                    <label class="form-check-label" for="<%= quality %>"><%= quality %>p</label>
+                    <input class="form-check-input" type="radio" id="<%= quality %>" name="quality" value="<%- quality %>"/>
+                </div>
+            <% }) %>
+            <h3>Captions</h3>
+            <div class="d-flex flex-wrap">
+                <% captions.forEach(caption => { %>
+                    <div class="form-check m-2">
+                        <label class="form-check-label" for="caption<%= caption.language %>"><%= caption.language %></label>
+                        <input class="form-check-input" type="checkbox" id="caption<%= caption.language %>" name="caption" value="<%- caption.language %>"/>
+                    </div>
+                <% }) %>
+            </div>
+            <p class="text-muted">Source: <%- source %></p>
+            <button type="submit" class="btn btn-primary">Download</button>
+        </form>
+    </div>
+</div>
+<%- include('../footer') %>

@@ -1,0 +1,21 @@
+<%- include('../../header') -%>
+  <h1>Movies library</h1>
+  <div class="d-flex flex-wrap">
+    <% films.forEach(function(film, i){ %>
+      <div class="card m-1" style="width: 220px;">
+        <% if (film.poster != undefined) { %>
+          <img src="https://www.themoviedb.org/t/p/w220_and_h330_face<%= film.poster %>" alt="poster" class="w-100 card-img-top" />
+        <% } else { %>
+          <img src="https://via.placeholder.com/220x330.png?text=<%= film.name.replace(' ', '+') %>" alt="poster" class="card-img-top"/>
+        <% } %>
+        <a href="/films/<%= film.id %>/streams" class="card-link text-center"><%= film.name %></a>
+      </div>
+    <% }) %>
+  </div>
+  
+  <hr class="mb-4 mt-4">
+  <div class="d-flex justify-content-center">
+    <a class="btn btn-primary" href="/series/add">Add new Movie</a>
+  </div>
+  
+<%- include('../../footer') -%>

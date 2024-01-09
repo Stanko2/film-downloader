@@ -4,18 +4,17 @@ import db from './db'
 import { URL } from 'url'
 import Downloader from './downloader'
 import path from 'path'
-import { ffprobe } from 'fluent-ffmpeg'
-import { humanFileSize } from './util'
+import { IsVideo, getStreamMetadata } from './util'
+import { getMovieFromID, init, searchMovie } from './tmdb'
+import { NotFoundError, RunnerOptions, makeProviders, makeStandardFetcher, targets } from '@movie-web/providers'
+import MovieDB from 'node-themoviedb'
 
 const router = Router()
-const videoExtensions = ['m4v', 'avi','mpg','mp4', 'webm', 'mov', 'mkv']
-
-function IsVideo(name: string): boolean {
-  return videoExtensions.some(ext => name.endsWith(ext))
-}
+init()
 
 
-async function getAllFilms() {
+
+async function getAllMovies() {
   const location = await db.getSaveLocation('films') 
   if(fs.existsSync(location)){
     const films = fs.readdirSync(location).filter(x => fs.statSync(path.join(location, x)).isDirectory())
@@ -24,68 +23,67 @@ async function getAllFilms() {
   else throw new Error('Film library non-existed or non specified')
 }
 
-router.get('/', async (req, res)=>{
-  const films = await getAllFilms()
-  res.render('pages/films', {
-    films: films.map((name, i) => {
-      return {
-        name,
-        id: i
-      }
+async function getMovieDetails(name: string) {
+  name = name.split('(')[0]
+  let id = parseInt(await db.client.get('movies:'+ name) || 'NaN')
+  if(isNaN(id)) {
+    const data = await searchMovie(name, undefined)
+    if(data.length == 0) {
+      return null
+    }
+    await db.client.set('movies:'+ name, data[0].id)
+    id = data[0].id
+  }
+  return await getMovieFromID(id.toString())
+}
+
+async function reloadMovieDatabase() {
+  const movies = await getAllMovies()
+  const movieLibrary = []
+  for (const [i, movie] of movies.entries()) {
+    const details = await getMovieDetails(movie)
+    movieLibrary.push({
+      name: details?.title || movie,
+      id: i,
+      poster: details?.poster_path
     })
+  }
+  db.client.set('moviesLibrary', JSON.stringify(movieLibrary))
+}
+
+router.get('/', async (_req, res)=>{
+  const data = JSON.parse(await db.client.get('moviesLibrary') || '[]')
+  if(data.length == 0) {
+    await reloadMovieDatabase()
+  }
+  res.render('pages/movies/list', {
+    films: data
   })
 })
 
-async function getStreamMetadata(file: string, name: string) {
-  return new Promise((resolve, reject) => {
-    ffprobe(file, (err, data)=> {
-      if(err){
-        reject(err);
-      }
-      else {
-        resolve({
-          name,
-          resolution: {
-            width: data.streams.find(s => s.codec_type === 'video')?.coded_width,
-            height: data.streams.find(s => s.codec_type === 'video')?.coded_height
-          },
-          metadata: {
-            size: humanFileSize(data.format.size || 0, true, 2),
-            bit_rate: humanFileSize(data.format.bit_rate || 0),
-            duration: new Date((data.format.duration || 0) * 1000).toTimeString().substring(0, 8)
-          }
-        })
-      }
-    })
-
-  })
-}
-
 router.get('/:id/streams', async (req,res) => {
-  const films = await getAllFilms()
+  const films = await getAllMovies()
   const location = await db.getSaveLocation('films')
   const filmName = films[parseInt(req.params.id)] 
   const streamNames = fs.readdirSync(path.join(location, filmName)).filter(x=> IsVideo(x))
   const streams: any[] = []
+  const details = await getMovieDetails(filmName) || null
   for (const stream of streamNames) {
     const p = path.join(location, filmName, stream)
     const data = await getStreamMetadata(p, stream)
     streams.push(data)
   }
-  res.render('pages/filmStats', { film: {
+  res.render('pages/movies/stats', { film: {
       name: filmName,
       streams: streams
-    }
+    },
+    details
   })
 })
   
 router.post('/add', async (req, res)=> {
-    console.log(req.body)
     try {
         const url:string = req.body.FilmURL
-        if(!IsVideo(url)){
-            throw new Error('Invalid file extension, not video')
-        }
         new URL(url)
         const name = `${req.body.FilmName} (${req.body.releaseYear})`
         new Downloader(url, await db.getSaveLocation('films') + `/${name}`, name, (out)=> {
@@ -93,7 +91,7 @@ router.post('/add', async (req, res)=> {
                 res.redirect('/films')
             }
             else res.render('error', {error: 'file is not downloadable'})
-        });
+        }, {}, 'file');
     }
     catch(e) {
         res.render('error', { error: e })
@@ -101,7 +99,91 @@ router.post('/add', async (req, res)=> {
 })
 
 router.get('/add', (_req, res) => {
-    res.render('pages/filmAdd')
+    res.render('pages/movies/add')
+})
+
+router.post('/add/search', async (req,res)=> {
+  const query = req.body.FilmName
+  console.log(query);
+  res.redirect('/films/add/searchResult?q=' + query);
+})
+
+router.get('/add/searchResult', async (req, res) => {
+  if(!req.query.q) {
+    res.send('No query')
+    res.statusCode = 400
+    return
+  }
+  const result = await searchMovie(req.query.q as string, undefined)
+  res.render('pages/searchResults', {
+    query: req.query.q,
+    result,
+    movie: true
+  })
 })
   
+router.get('/download/:id', async (req,res) => {
+  const data = await getMovieFromID(req.params.id)
+  const providers = await getProviders(data)
+  if(providers?.stream.type == 'file'){
+
+    res.render('pages/qualityChooser', {
+      title: data.title,
+      qualities: Object.keys(providers.stream.qualities),
+      postUrl: `/films/download/${req.params.id}`,
+      captions: providers.stream.captions,
+      source: providers.sourceId,
+      banner: data.poster_path
+    })
+  }
+})
+
+async function getProviders(movieData: MovieDB.Responses.Movie.GetDetails) {
+  const fetcher = makeStandardFetcher(fetch)
+  const providers = makeProviders({
+    fetcher,
+    target: targets.ANY
+  })
+  
+  const scrapeArgs: RunnerOptions = {
+    media: {
+      type: 'movie',
+      title: movieData.title,
+      tmdbId: movieData.id.toString() || '',
+      imdbId: movieData.imdb_id ?? undefined,
+      releaseYear: new Date(movieData.release_date).getFullYear()
+    }, 
+  }
+
+  // let best:RunOutput
+  for (const source of providers.listSources()) {
+    try {
+      console.log('scraping ' + source.id);
+      const out = await providers.runAll({
+        media: scrapeArgs.media,
+        sourceOrder: [source.id]
+      })
+      
+      if(out?.stream.type === 'file'){
+        // best = out
+        console.log(Object.keys(out.stream.qualities))
+      } else if(out?.stream.type === 'hls'){
+        const stream = await fetch(out.stream.playlist)
+        console.log(await stream.text())
+      }
+    }
+    catch(e){
+      console.log('error');
+      
+      if(e instanceof NotFoundError){
+        continue
+      }
+      console.log(e);
+      continue
+    }
+  }
+
+  return await providers.runAll(scrapeArgs)
+}
+
 export default router

@@ -1,17 +1,33 @@
 <%- include('header') -%>
-<h1>KODI library manager</h1>
-<p>Helper for your KODI film library. You can schedule film download or diagnose films, 
-    that KODI scraper hasn't found</p>
-<h3><%- Downloads.length %> Scheduled downloads</h3>
+<div class="mt-4 p-5 bg-primary text-white rounded mb-4">
+    <h1 class="display-4">KODI library manager</h1>
+
+    <p class="lead">Helper for your KODI film library. You can schedule video download or diagnose files, 
+        that KODI scraper hasn't found</p>
+</div>
+    
+<h3 data-bs-toggle="collapse" data-bs-target="#scheduled">
+    <%- Downloads.length %> Scheduled downloads
+</h3>
 <hr class="mb-4">
-<ul class="list-group">
+<ul class="list-group mb-4 collapse" id="scheduled">
     <% for(const download of Downloads) { %>
         <li class="list-group-item list-group-item-<%- stateMap[download.state] %>">
             <div class="row">
-                <p class="col-8"><%- download.dest %> <span class=" badge text-bg-<%- stateMap[download.state] %>"><%- download.state %></span></p>
+                <p class="col-8"><%- download.name %> 
+                    <span class=" badge text-bg-<%- stateMap[download.state] %>"><%- download.state %></span>
+                    <span class=" badge text-bg-secondary"><%- download.type %></span>
+                </p>
                 <% if (download.state == 'scheduled') { %>
-                    <form method="post" action="/<%- download.id %>/download" class="col-4">
+                    <form method="post" action="/<%- download.id %>/download" class="col-2">
                         <button type="submit" class="btn btn-primary w-100">Start Now</button>
+                    </form>
+                    <form method="post" action="/<%- download.id %>/cancel" class="col-2">
+                        <button type="submit" class="btn btn-danger w-100">Cancel</button>
+                    </form>
+                <% } else if (download.state == 'inProgress') { %>
+                    <form method="post" action="/<%- download.id %>/restart" class="col-4">
+                        <button type="submit" class="btn btn-danger w-100">Restart</button>
                     </form>
                 <% } %>
             </div>
@@ -19,9 +35,11 @@
     <% } %>
 </ul>
 
-<h3><%- complete.length %> Completed downloads</h3>
+<h3 data-bs-toggle="collapse" data-bs-target="#complete">
+    <%- complete.length %> Completed downloads
+</h3>
 <hr>
-<ul class="list-group">
+<ul class="list-group collapse show" id="complete">
     <% for(const download of complete) { %>
         <li class="list-group-item list-group-item-success">
             <div class="row">
@@ -30,4 +48,13 @@
         </li>
     <% } %>
 </ul>
+<hr>
+<div class="d-flex justify-content-around">
+    <form action="/series/reload" method="get">
+        <button class="btn btn-primary" type="submit">Reload TV show library cache</button>
+    </form>
+    <form action="/film/reload" method="get">
+        <button class="btn btn-primary" type="submit">Reload movie library cache</button>
+    </form>
+</div>
 <%- include('footer') -%>

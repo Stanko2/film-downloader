@@ -1,9 +1,0 @@
-<%- include('../header') -%>
-  <h1>Films library</h1>
-  <a class="btn btn-primary" href="/films/add">Add new film</a>
-  <ul class="list-group">
-    <% films.forEach(function(film, i){ %>
-        <li class="list-group-item"><a href="/films/<%= film.id %>/streams"><%= film.name %></a></li>
-    <% }) %>
-  </ul>  
-<%- include('../footer') -%>
