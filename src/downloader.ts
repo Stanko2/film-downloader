@@ -92,6 +92,9 @@ export default class Downloader {
                     db.addDownloadCommand(this.toDownloadCommand('scheduled')).then(id => this.id = id)
                 }
             }
+        }).catch((e)=>{
+            console.error(e);
+            this.cb(false)
         })
         this.downloader.on('error', (s)=>{
             console.error(s);
