@@ -1,3 +1,4 @@
 node_modules/*
 lib/*
+docker-compose.yml
 ```
