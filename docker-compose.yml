@@ -31,10 +31,10 @@ services:
     links: 
       - redis
     environment:
-      - NODE_ENV=development
+      - NODE_ENV=production
       - PORT=3000
       - REDIS_URL=redis://cache
-      - TMDB_KEY=<your api key>
+      - TMDB_KEY=79562bc66c46155449444967bdc26058
     command:
       sh -c 'npm i && npm run dev'
 

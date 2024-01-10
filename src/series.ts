@@ -64,7 +64,7 @@ async function getShowDetails(name: string) {
 
 
 async function reloadShowDatabase() {
-  const showLibrary = []
+  const showLibrary: any[] = []
   const shows = await getAllShows()
   for (const [i, show] of shows.entries()) {
     const details = await getShowDetails(show)

@@ -39,7 +39,7 @@ async function getMovieDetails(name: string) {
 
 async function reloadMovieDatabase() {
   const movies = await getAllMovies()
-  const movieLibrary = []
+  const movieLibrary: any[] = []
   for (const [i, movie] of movies.entries()) {
     const details = await getMovieDetails(movie)
     movieLibrary.push({

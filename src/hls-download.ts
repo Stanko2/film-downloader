@@ -9,10 +9,10 @@ export async function downloadHls(src: string, dest: string, name: string, progr
     const segments = await getSegments(src);
 
     const baseUrl = src.split('/').slice(0, -1).join('/')
-    const ops = []
+    const ops: Promise<void>[] = []
     let done = 0
     console.log(`downloading ${segments.length} segments`);
-    const paths = []
+    const paths: string[] = []
     for (const segment of segments) {
         const p = path.join(dest, 'segments-' + name, segment)
         paths.push(p)
@@ -29,6 +29,12 @@ export async function downloadHls(src: string, dest: string, name: string, progr
             console.log(`downloaded ${done}/${segments.length}`);
             
         }))
+
+        if (ops.length > 10) {
+            await Promise.all(ops)
+            ops.splice(0, ops.length)
+            await new Promise(r => setTimeout(r, 1000))
+        }
     }
 
     await Promise.all(ops)
@@ -48,7 +54,7 @@ async function mergeSegments(dest: string, name: string, paths: string[]) {
         stream.end(() => {
             ffprobe(name + '.mp4', async (err, data) => {
                 if(err) reject(err)
-                const include = []
+                const include: string[] = []
                 for (const stream of data.streams) {
                     if (stream.codec_type == 'video') {
                         include.push('-map', `0:${stream.index}`)
@@ -106,7 +112,7 @@ async function fileToStream(file: string, out: WriteStream): Promise<void> {
 
 async function getSegments(playlistURL: string): Promise<string[]> {
     const manifest = await fetchText(playlistURL)
-    const out = []
+    const out: string[] = []
     const lines = manifest.split('\n')
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
