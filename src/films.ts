@@ -6,7 +6,7 @@ import Downloader from './downloader'
 import path from 'path'
 import { IsVideo, getStreamMetadata, parseHlsQuality } from './util'
 import { getMovieFromID, init, searchMovie } from './tmdb'
-import { NotFoundError, RunnerOptions, makeProviders, makeStandardFetcher, targets } from '@movie-web/providers'
+import { RunnerOptions, makeProviders, makeStandardFetcher, targets } from '@movie-web/providers'
 import MovieDB from 'node-themoviedb'
 import fetch from 'node-fetch'
 
