@@ -96,7 +96,7 @@ router.get('/', async (_req, res)=>{
 
 router.get('/:id/streams', async (req,res) => {
   const shows = await getAllShows()
-  const location = await db.getSaveLocation('films')
+  const location = await db.getSaveLocation('series')
   const showName = shows[parseInt(req.params.id)] 
   const streamNames = fs.readdirSync(path.join(location, showName)).filter(x=> IsVideo(x))
   const streams: any[] = []

@@ -25,7 +25,7 @@ services:
     build: ./
     volumes:
       - ./:/var/www/app
-      - /home:/mnt
+      - /mnt:/mnt
     ports:
       - 3000:3000
     links: 
