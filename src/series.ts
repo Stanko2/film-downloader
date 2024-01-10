@@ -235,7 +235,7 @@ async function scrapeEpisode(data: MovieDB.Responses.TV.GetDetails, season: numb
           title: data.name,
           tmdbId: data.id.toString(),
     }
-  })
+  }).catch(() => null)
 }
 
 export default router
