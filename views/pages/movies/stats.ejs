@@ -1,8 +1,9 @@
 <%- include('../../header') %>
-<div class="row">
+<div class="bg"></div>
+<div class="row align-items-center"  style="min-height: 95vh;">
     <div class="col-4">
         <% if (details != null) { %>
-            <img src="https://www.themoviedb.org/t/p/w220_and_h330_face<%= details.backdrop_path %>" alt="poster" class="w-100" />
+            <img src="https://www.themoviedb.org/t/p/w1280<%= details.poster_path %>" alt="poster" class="w-100" />
         <% } else { %>
             <img src="https://via.placeholder.com/220x330.png?text=No+poster" alt="poster" class="w-100" />
         <% } %>
@@ -29,7 +30,7 @@
                         <h6>Name: <%- stream.name %></h6>
                         <p>Size: <%- stream.metadata.size %></p>
                         <p>Bit rate: <%- stream.metadata.bit_rate %></p>
-                        <p>Resolution: <%- stream.resolution.width %>x<%- stream.resolution.height %></p>
+                        <p>Resolution: <span class="badge bg-warning"> <%- stream.resolution.width %>&times;<%- stream.resolution.height %></span></p>
                         <p>Duration: <%- stream.metadata.duration %></p>
                     </div>
                 </li>
@@ -37,4 +38,21 @@
         </ul>
     </div>
 </div>
+<style>
+    .bg {
+        <% if (details != null) { %>
+        background-image: url(  'https://www.themoviedb.org/t/p/w1280<%= details.backdrop_path %>');
+        <% } %>
+        background-size: cover;
+        background-repeat: no-repeat;
+        background-position: center;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: -1;
+        opacity: 0.3;
+    }
+</style>
 <%- include('../../footer') %>

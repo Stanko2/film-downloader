@@ -1,40 +1,59 @@
 <%- include('../../header') %>
-<div class="row m-4">
-    <div class="col-4">
-        <% if (details != null) { %>
-            <img src="https://www.themoviedb.org/t/p/w220_and_h330_face<%= details.backdrop_path %>" alt="poster" class="w-100" />
-        <% } else { %>
-            <img src="https://via.placeholder.com/220x330.png?text=No+poster" alt="poster" class="w-100" />
-        <% } %>
+<div class="bg"></div>
+    <div class="row align-items-center" style="min-height: 95vh;">
+        <div class="col-4">
+            <% if (details != null) { %>
+                <img src="https://www.themoviedb.org/t/p/w1280<%= details.poster_path %>" alt="poster" class="w-100" />
+            <% } else { %>
+                <img src="https://via.placeholder.com/220x330.png?text=No+poster" alt="poster" class="w-100" />
+            <% } %>
+        </div>
+        <div class="col-8">
+            <h1><%- film.name %></h1>
+            <% if (details) { %>
+                <p><%- details.overview %></p>
+                <p>First aired: <%- details.first_air_date %></p>
+            <% } else { %>
+                <div class="alert alert-danger">
+                    <p>No data found for TV show "<%- film.name %>"</p>
+                </div>
+            <% } %>
+            <hr>
+            <p><%- film.streams.length %> Videos found</p>
+            <ul class="list-group">
+                <% film.streams.forEach((stream, i) => { %>
+                    <li class="card">   
+                        <button class="card-header btn" data-bs-target="#collapse-<%- i %>" data-bs-toggle="collapse">
+                            <%- stream.name %>
+                        </button>
+                        <div class="card-body collapse" id="collapse-<%- i %>">
+                            <h6>Name: <%- stream.name %></h6>
+                            <p>Size: <%- stream.metadata.size %></p>
+                            <p>Bit rate: <%- stream.metadata.bit_rate %></p>
+                            <p>Resolution: <span class="badge bg-warning"> <%- stream.resolution.width %>&times;<%- stream.resolution.height %></span></p>
+                            <p>Duration: <%- stream.metadata.duration %></p>
+                        </div>
+                    </li>
+                <% }) %>
+            </ul>
+        </div>
     </div>
-    <div class="col-8">
-        <h1><%- film.name %></h1>
-        <% if (details) { %>
-            <p><%- details.overview %></p>
-            <p>First aired: <%- details.first_air_date %></p>
-        <% } else { %>
-            <div class="alert alert-danger">
-                <p>No data found for TV show "<%- film.name %>"</p>
-            </div>
-        <% } %>
-        <hr>
-        <p><%- film.streams.length %> Videos found</p>
-        <ul class="list-group">
-            <% film.streams.forEach((stream, i) => { %>
-                <li class="card">   
-                    <button class="card-header btn" data-bs-target="#collapse-<%- i %>" data-bs-toggle="collapse">
-                        <%- stream.name %>
-                    </button>
-                    <div class="card-body collapse" id="collapse-<%- i %>">
-                        <h6>Name: <%- stream.name %></h6>
-                        <p>Size: <%- stream.metadata.size %></p>
-                        <p>Bit rate: <%- stream.metadata.bit_rate %></p>
-                        <p>Resolution: <span class="badge bg-warning"> <%- stream.resolution.width %>x<%- stream.resolution.height %></span></p>
-                        <p>Duration: <%- stream.metadata.duration %></p>
-                    </div>
-                </li>
-            <% }) %>
-        </ul>
-    </div>
-</div>
+
+    <style>
+        .bg {
+            <% if (details != null) { %>
+            background-image: url(  'https://www.themoviedb.org/t/p/w1280<%= details.backdrop_path %>');
+            <% } %>
+            background-size: cover;
+            background-repeat: no-repeat;
+            background-position: center;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            opacity: 0.3;
+        }
+    </style>
 <%- include('../../footer') %>

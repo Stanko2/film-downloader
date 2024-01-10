@@ -4,10 +4,11 @@ import db from './db'
 import { URL } from 'url'
 import Downloader from './downloader'
 import path from 'path'
-import { IsVideo, getStreamMetadata } from './util'
+import { IsVideo, getStreamMetadata, parseHlsQuality } from './util'
 import { getMovieFromID, init, searchMovie } from './tmdb'
 import { NotFoundError, RunnerOptions, makeProviders, makeStandardFetcher, targets } from '@movie-web/providers'
 import MovieDB from 'node-themoviedb'
+import fetch from 'node-fetch'
 
 const router = Router()
 init()
@@ -125,17 +126,27 @@ router.get('/add/searchResult', async (req, res) => {
 router.get('/download/:id', async (req,res) => {
   const data = await getMovieFromID(req.params.id)
   const providers = await getProviders(data)
-  if(providers?.stream.type == 'file'){
-
-    res.render('pages/qualityChooser', {
-      title: data.title,
-      qualities: Object.keys(providers.stream.qualities),
-      postUrl: `/films/download/${req.params.id}`,
-      captions: providers.stream.captions,
-      source: providers.sourceId,
-      banner: data.poster_path
-    })
+  const stream = providers?.stream
+  if(stream == undefined) {
+    res.render('error', {error: 'No stream found'})
+    return
   }
+  let qualities: string[] = []
+  if(stream.type == 'file'){
+    qualities = Object.keys(stream.qualities)
+  } else {
+    const res = await fetch(stream.playlist).then(res => res.text())
+    qualities = Object.keys(parseHlsQuality(res))
+  }
+  
+  res.render('pages/qualityChooser', {
+    title: data.title,
+    qualities,
+    postUrl: `/films/download/${req.params.id}`,
+    captions: providers?.stream.captions,
+    source: providers?.sourceId,
+    banner: data.poster_path
+  })
 })
 
 async function getProviders(movieData: MovieDB.Responses.Movie.GetDetails) {
@@ -156,32 +167,32 @@ async function getProviders(movieData: MovieDB.Responses.Movie.GetDetails) {
   }
 
   // let best:RunOutput
-  for (const source of providers.listSources()) {
-    try {
-      console.log('scraping ' + source.id);
-      const out = await providers.runAll({
-        media: scrapeArgs.media,
-        sourceOrder: [source.id]
-      })
+  // for (const source of providers.listSources()) {
+  //   try {
+  //     console.log('scraping ' + source.id);
+  //     const out = await providers.runAll({
+  //       media: scrapeArgs.media,
+  //       sourceOrder: [source.id]
+  //     })
       
-      if(out?.stream.type === 'file'){
-        // best = out
-        console.log(Object.keys(out.stream.qualities))
-      } else if(out?.stream.type === 'hls'){
-        const stream = await fetch(out.stream.playlist)
-        console.log(await stream.text())
-      }
-    }
-    catch(e){
-      console.log('error');
+  //     if(out?.stream.type === 'file'){
+  //       // best = out
+  //       console.log(Object.keys(out.stream.qualities))
+  //     } else if(out?.stream.type === 'hls'){
+  //       const stream = await fetch(out.stream.playlist)
+  //       console.log(await stream.text())
+  //     }
+  //   }
+  //   catch(e){
+  //     console.log('error');
       
-      if(e instanceof NotFoundError){
-        continue
-      }
-      console.log(e);
-      continue
-    }
-  }
+  //     if(e instanceof NotFoundError){
+  //       continue
+  //     }
+  //     console.log(e);
+  //     continue
+  //   }
+  // }
 
   return await providers.runAll(scrapeArgs)
 }

@@ -3,6 +3,7 @@ import fs from 'fs'
 import db from "./db";
 import { extname, join } from "path"
 import { downloadHls } from "./hls-download";
+import fetch from 'node-fetch'
 
 type DownloadType = 'hls' | 'file'
 

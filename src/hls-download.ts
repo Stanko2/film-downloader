@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import {existsSync, createReadStream, createWriteStream, WriteStream} from 'fs';
 import { ffprobe } from 'fluent-ffmpeg';
+import fetch from 'node-fetch';
 
 export async function downloadHls(src: string, dest: string, name: string, progressCallback: (progress: number) => void) {
     await fs.mkdir(path.join(dest, 'segments-' + name), { recursive: true, mode: 0o777 });

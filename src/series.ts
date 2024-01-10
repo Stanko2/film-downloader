@@ -7,6 +7,7 @@ import { IsVideo, parseHlsQuality, getStreamMetadata } from './util'
 import { getTvShowFromID, init, searchSeries } from './tmdb'
 import { Qualities, RunOutput, makeProviders, makeStandardFetcher, targets } from '@movie-web/providers'
 import MovieDB from 'node-themoviedb'
+import fetch from 'node-fetch'
 
 const router = Router()
 
