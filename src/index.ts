@@ -44,7 +44,8 @@ app.post('/:id/download', (req, res)=> {
 
 app.post('/:id/cancel', (req,res) => {
   const id = parseInt(req.params.id)
-  downloaders[id].cancel()
+  db.removeDownloadById(id)
+  delete downloaders[id]
   res.redirect('/')
 })
 

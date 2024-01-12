@@ -19,15 +19,14 @@ init()
 async function getAllMovies() {
   const location = await db.getSaveLocation('films') 
   if(fs.existsSync(location)){
-    const films = fs.readdirSync(location).filter(x => fs.statSync(path.join(location, x)).isDirectory())
+  const films = fs.readdirSync(location).filter(x => fs.statSync(path.join(location, x)).isDirectory())
     return films
   }
   else throw new Error('Film library non-existed or non specified')
 }
 
 async function getMovieDetails(name: string) {
-  name = name.split('(')[0]
-  let id = parseInt(await db.client.get('movies:'+ name) || 'NaN')
+  let id = parseInt(await db.client.get('movies:'+ name.replaceAll(' ', '-')) || 'NaN')
   if(isNaN(id)) {
     const data = await searchMovie(name, undefined)
     if(data.length == 0) {
@@ -52,6 +51,11 @@ async function reloadMovieDatabase() {
   }
   db.client.set('moviesLibrary', JSON.stringify(movieLibrary))
 }
+
+router.get('/reload', async (_req, res) => {
+  await reloadMovieDatabase()
+  res.redirect('/')
+})
 
 router.get('/', async (_req, res)=>{
   const data = JSON.parse(await db.client.get('moviesLibrary') || '[]')
@@ -179,7 +183,7 @@ router.post('/download/:id', async (req, res) => {
   }
   
   res.redirect('/films')
-  new Downloader(url, path.join(location, dirName), dirName, ()=> {}, captions, streamType);
+  new Downloader(url, path.join(location, dirName), dirName, (success)=> {return}, captions, streamType);
 })
 
 async function getProviders(movieData: MovieDB.Responses.Movie.GetDetails, source: string | undefined) {

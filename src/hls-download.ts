@@ -26,10 +26,8 @@ export async function downloadHls(src: string, dest: string, name: string, progr
         }
         ops.push(downloadSegment(baseUrl, segment, p).then(()=> {
             done++
-            progressCallback?.(done / segments.length)
-            console.log(`downloaded ${done}/${segments.length}`);
-            
-        }))
+            progressCallback?.(done / segments.length)            
+        }).catch(console.error))
 
         if (ops.length > 10) {
             await Promise.all(ops)
@@ -131,8 +129,18 @@ async function fetchText(url: string) {
     return await res.text()
 }
 
-async function downloadSegment(url: string, segName: string, dest: string) {
-    const res = await fetch(url + '/' + segName)
-    const buf =  await res.arrayBuffer()
-    await fs.writeFile(dest, Buffer.from(buf))
+async function downloadSegment(url: string, segName: string, dest: string, retry = 0) {
+    // eslint-disable-next-line no-async-promise-executor
+    return new Promise<void>(async (resolve, reject) => {
+        const timeout = setTimeout(async () => {
+            if(retry < 10) 
+                downloadSegment(url, segName, dest, retry + 1).then(resolve).catch(reject);
+        }, 4000);
+        const res = await fetch(url + '/' + segName).catch(reject)
+        const buf =  await res?.arrayBuffer().catch(reject)
+        clearTimeout(timeout)
+        if(buf)
+            await fs.writeFile(dest, Buffer.from(buf)).catch(reject)
+        resolve()
+    })
 }

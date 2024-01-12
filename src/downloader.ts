@@ -100,7 +100,7 @@ export default class Downloader {
 
         if(!res) return false
         
-        const stream = fs.createWriteStream(join(this.dest, this.name + extname(this.videoURL)), {mode: 0o777})
+        const stream = fs.createWriteStream(join(this.dest, this.name + extname(this.videoURL.split('?')[0])), {mode: 0o777})
         res.data.pipe(stream)
         return new Promise<boolean>((resolve, reject) => {
             stream.on('finish', () => {

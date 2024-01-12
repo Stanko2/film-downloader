@@ -23,7 +23,10 @@ class Database {
 
     async addDownloadCommand(command: DownloadCommand): Promise<number> {
         if(command.id == -1){
-            command.id = await this.client.lLen("Downloads")
+            if (await this.client.exists("downloadId") == 0) {
+                await this.client.set("downloadId", await this.client.lLen("Downloads"))
+            }
+            command.id = await this.client.incr("downloadId")
         }
         await this.client.rPush("Downloads", JSON.stringify(command))
         return command.id
@@ -49,6 +52,10 @@ class Database {
 
     async getDownloadCron(): Promise<string> {
         return await this.client.get('downloadCron') || '0 0 0 * * *';
+    }
+
+    async removeDownloadById(id: number): Promise<void> {
+        this.client.lRem("Downloads", 1, JSON.stringify(await this.getDownloadById(id)))
     }
 
     async setDownloadCron(val: string): Promise<void> {
