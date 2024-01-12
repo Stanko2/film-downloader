@@ -1,4 +1,4 @@
-import { DownloaderHelper } from "node-downloader-helper";
+import axios from "axios";
 import fs from 'fs'
 import db from "./db";
 import { extname, join } from "path"
@@ -36,7 +36,6 @@ export async function Init() {
 export const downloaders: Record<number, Downloader> = {}
 
 export default class Downloader {
-    downloader!: DownloaderHelper
     constructor(private videoURL: string, private dest: string, private name: string, private cb: (success: boolean) => void, captionURLs: Record<string, string>, private type: DownloadType, private id: number = -1) {
         if(!fs.existsSync(dest)) fs.mkdirSync(dest, {recursive: true, mode: 0o777})
         if(this.id == -1) {
@@ -51,9 +50,7 @@ export default class Downloader {
     }
 
     init() {
-        if(this.type == 'file'){
-            this.initFile()
-        } else {
+        if(this.type == 'hls'){
             this.initHls()
         }
         downloaders[this.id] = this
@@ -65,7 +62,7 @@ export default class Downloader {
             db.updateDownloadById(this.id, this.toDownloadCommand('inProgress'))
             console.log(`Starting Download ${this.name}`);
             if(this.type == 'file'){
-                return await this.downloader.start()
+                return await this.initFile()
             } else {
                 return downloadHls(this.videoURL, this.dest, this.name, (progress) => {
                     const data = this.toDownloadCommand('inProgress')
@@ -81,36 +78,39 @@ export default class Downloader {
         return false
     }
 
-    initFile() {
-        this.downloader = new DownloaderHelper(this.videoURL, this.dest, {
-            fileName: this.name + extname(this.videoURL.split('?')[0])
-        })
-        this.downloader.getTotalSize().then((res)=>{
-            this.cb(res.total != null)
-            if(res.total){
-                if(this.id == -1){
-                    db.addDownloadCommand(this.toDownloadCommand('scheduled')).then(id => this.id = id)
+    async initFile() {
+        const res =  await axios({
+            baseURL: this.videoURL,
+            method: 'get',
+            responseType: 'stream',
+            onDownloadProgress: (progress) => {
+                if(progress.total == progress.loaded){
+                    db.updateDownloadById(this.id, this.toDownloadCommand('complete'))
+                }
+                else {
+                    const data = this.toDownloadCommand('inProgress')
+                    data.progress = progress.loaded / (progress.total || 1)
+                    db.updateDownloadById(this.id, data)
                 }
             }
-        }).catch((e)=>{
-            console.error(e);
-            this.cb(false)
+        }).catch((err) => {
+            console.log(err);
+            db.updateDownloadById(this.id, this.toDownloadCommand('error'))
         })
-        this.downloader.on('error', (s)=>{
-            console.error(s);
-            const data = this.toDownloadCommand('error')
-            data.error = s.message
-            db.updateDownloadById(this.id, data)
-        })
-        this.downloader.on('progress', (s) => {
-            if(s.progress == 100){
-                db.updateDownloadById(this.id, this.toDownloadCommand('complete'))
-            }
-            else {
-                const data = this.toDownloadCommand('inProgress')
-                data.progress = s.progress
-                db.updateDownloadById(this.id, data)
-            }
+
+        if(!res) return false
+        
+        const stream = fs.createWriteStream(join(this.dest, this.name + extname(this.videoURL)), {mode: 0o777})
+        res.data.pipe(stream)
+        return new Promise<boolean>((resolve, reject) => {
+            stream.on('finish', () => {
+                console.log(`Finished Download ${this.name}`)
+                resolve(true)
+            })
+            stream.on('error', () => {
+                console.log(`Error Downloading ${this.name}`)
+                reject(false)
+            })
         })
     }
 

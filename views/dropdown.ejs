@@ -1,0 +1,10 @@
+<div class="dropdown">
+    <button class="btn btn-primary dropdown-toggle" data-bs-toggle="dropdown">
+        <%= text %>
+    </button>
+    <div class="dropdown-menu">
+        <% options.forEach(option => { %>
+            <a class="dropdown-item" href="<%= option.value %>"><%= option.text %></a>
+        <% }) %>
+    </div>
+</div>

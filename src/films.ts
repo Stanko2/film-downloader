@@ -4,11 +4,12 @@ import db from './db'
 import { URL } from 'url'
 import Downloader from './downloader'
 import path from 'path'
-import { IsVideo, getStreamMetadata, parseHlsQuality } from './util'
+import { IsVideo, getStreamMetadata, listSources, parseHlsQuality } from './util'
 import { getMovieFromID, init, searchMovie } from './tmdb'
-import { RunnerOptions, makeProviders, makeStandardFetcher, targets } from '@movie-web/providers'
+import { Qualities, RunnerOptions, makeProviders, makeStandardFetcher, targets } from '@movie-web/providers'
 import MovieDB from 'node-themoviedb'
 import fetch from 'node-fetch'
+import axios from 'axios'
 
 const router = Router()
 init()
@@ -125,36 +126,69 @@ router.get('/add/searchResult', async (req, res) => {
   
 router.get('/download/:id', async (req,res) => {
   const data = await getMovieFromID(req.params.id)
-  const providers = await getProviders(data)
+  const providers = await getProviders(data, req.query.source as string)
   const stream = providers?.stream
   if(stream == undefined) {
     res.render('error', {error: 'No stream found'})
     return
   }
-  let qualities: string[] = []
+  let qualities: Partial<Record<Qualities, string>> = {}
   if(stream.type == 'file'){
-    qualities = Object.keys(stream.qualities)
+    Object.keys(stream.qualities).forEach((q) => {
+      qualities[q] = stream.qualities[q].url
+    })
   } else {
-    const res = await fetch(stream.playlist).then(res => res.text())
-    qualities = Object.keys(parseHlsQuality(res))
+    const playlist = (await axios.get(stream.playlist).catch(err => console.log(err))
+    )?.data
+    qualities = parseHlsQuality(playlist)
   }
-  
+
   res.render('pages/qualityChooser', {
     title: data.title,
     qualities,
-    postUrl: `/films/download/${req.params.id}`,
-    captions: providers?.stream.captions,
+    type: stream.type,
+    postUrl: req.originalUrl,
+    captions: providers?.stream.captions.map(x => {
+      return {
+        text: x.language,
+        value: x.url
+      }
+    }),
     source: providers?.sourceId,
-    banner: data.poster_path
+    banner: data.poster_path,
+    sources: listSources().map(x => {
+      return {
+        text: x.name,
+        value: req.originalUrl.split('?')[0] + '?source=' + x.id
+      }
+    })
   })
 })
 
-async function getProviders(movieData: MovieDB.Responses.Movie.GetDetails) {
+router.post('/download/:id', async (req, res) => {
+  const data = await getMovieFromID(req.params.id)
+  const location = await db.getSaveLocation('films')
+  const dirName = `${data.title} (${new Date(data.release_date).getFullYear()})`
+  const url = req.body.url;
+  const streamType = req.body.type;
+  const captions: Record<string, string> = {}
+
+  for (const c of req.body.caption || []) {
+    const [lang, url] = c.split('$$$')
+    captions[lang] = url
+  }
+  
+  res.redirect('/films')
+  new Downloader(url, path.join(location, dirName), dirName, ()=> {}, captions, streamType);
+})
+
+async function getProviders(movieData: MovieDB.Responses.Movie.GetDetails, source: string | undefined) {
   const fetcher = makeStandardFetcher(fetch)
   const providers = makeProviders({
     fetcher,
     target: targets.ANY
   })
+
   
   const scrapeArgs: RunnerOptions = {
     media: {
@@ -164,35 +198,8 @@ async function getProviders(movieData: MovieDB.Responses.Movie.GetDetails) {
       imdbId: movieData.imdb_id ?? undefined,
       releaseYear: new Date(movieData.release_date).getFullYear()
     }, 
+    sourceOrder: source ? [source] : undefined
   }
-
-  // let best:RunOutput
-  // for (const source of providers.listSources()) {
-  //   try {
-  //     console.log('scraping ' + source.id);
-  //     const out = await providers.runAll({
-  //       media: scrapeArgs.media,
-  //       sourceOrder: [source.id]
-  //     })
-      
-  //     if(out?.stream.type === 'file'){
-  //       // best = out
-  //       console.log(Object.keys(out.stream.qualities))
-  //     } else if(out?.stream.type === 'hls'){
-  //       const stream = await fetch(out.stream.playlist)
-  //       console.log(await stream.text())
-  //     }
-  //   }
-  //   catch(e){
-  //     console.log('error');
-      
-  //     if(e instanceof NotFoundError){
-  //       continue
-  //     }
-  //     console.log(e);
-  //     continue
-  //   }
-  // }
 
   return await providers.runAll(scrapeArgs)
 }

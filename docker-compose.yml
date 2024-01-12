@@ -25,7 +25,7 @@ services:
     build: ./
     volumes:
       - ./:/var/www/app
-      - /mnt:/mnt
+      - /:/mnt
     ports:
       - 3000:3000
     links: 
@@ -37,6 +37,6 @@ services:
       - TMDB_KEY=79562bc66c46155449444967bdc26058
     command:
       sh -c 'npm i && npm run dev'
-
+    restart: always
 volumes:
   redis-data:

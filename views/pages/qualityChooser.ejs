@@ -7,24 +7,52 @@
     </div>
     <div class="col-8">
         <form action="<%= postUrl  %>" method="post" class="form">
+            <input type="hidden" name="type" value="<%- type %>">
+            <input type="hidden" name="source" value="<%- source %>">
             <h3>Quality</h3>
-            <% qualities.forEach(quality => { %>
+            <% Object.entries(qualities).forEach(quality => { %>
                 <div class="form-check">
-                    <label class="form-check-label" for="<%= quality %>"><%= quality %>p</label>
-                    <input class="form-check-input" type="radio" id="<%= quality %>" name="quality" value="<%- quality %>"/>
+                    <label class="form-check-label" for="<%= quality[0] %>"><%= quality[0] %>p</label>
+                    <% if (pageType == 'movie') { %>
+                        <input class="form-check-input" type="radio" id="<%= quality[0] %>" name="url" value="<%- quality[1] %>"/>
+                    <% } else if (pageType == 'series') { %>
+                        <input class="form-check-input" type="radio" id="<%= quality[0] %>" name="quality" value="<%- quality[0] %>"/>
+                    <% } %>
                 </div>
             <% }) %>
             <h3>Captions</h3>
             <div class="d-flex flex-wrap">
                 <% captions.forEach(caption => { %>
                     <div class="form-check m-2">
-                        <label class="form-check-label" for="caption<%= caption.language %>"><%= caption.language %></label>
-                        <input class="form-check-input" type="checkbox" id="caption<%= caption.language %>" name="caption" value="<%- caption.language %>"/>
+                        <label class="form-check-label" for="caption<%= caption.text %>"><%= caption.text %></label>
+                        <input class="form-check-input" type="checkbox" id="caption<%= caption.text %>" name="caption" value="<%- caption.text %>$$$<%- caption.value %>"/>
                     </div>
                 <% }) %>
             </div>
+            <hr>
+            <% if (pageType == 'series') { %>
+                <% seasons.forEach((season, i) => { %>
+                    <h4>Season #<%- i %></h4>
+                    <div class="d-flex mb-4">
+                        <% for( let episode = 1; episode <= season; episode++ ) { %>
+                            <div class="form-check form-inline">
+                                <input type="checkbox" name="season-<%- i + 1 %>" id="episode<%- i %>#<%- episode %>" value="<%- episode %>" checked />
+                                <label for="episode<%- i %>#<%- episode %>">Episode #<%- episode %></label>
+                            </div>
+                        <% } %>
+                    </div>
+                <% }) %>
+                <hr>
+            <% } %>
             <p class="text-muted">Source: <%- source %></p>
-            <button type="submit" class="btn btn-primary">Download</button>
+            <div class="d-flex">
+                <button type="submit" class="btn btn-primary">Download</button>
+                <%- include('../dropdown', {
+                    text: 'Try different source',
+                    options: sources,
+                    name: 'source'
+                }) %>
+            </div>
         </form>
     </div>
 </div>
