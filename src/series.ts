@@ -81,14 +81,20 @@ async function reloadShowDatabase() {
 }
 
 router.get('/reload', async (_req, res) => {
-  await reloadShowDatabase()
+  await reloadShowDatabase().catch((err) => {
+    console.error(err);
+    res.render('error', {error: err});
+  })
   res.redirect('/')
 })
 
 router.get('/', async (_req, res)=>{
   const data = JSON.parse(await db.client.get('seriesLibrary') || '[]')
   if(data.length == 0) {
-    await reloadShowDatabase()
+    await reloadShowDatabase().catch((err) => {
+      console.error(err);
+      res.render('error', {error: err});
+    })
   }
   res.render('pages/tvShows/list', {
     films: data

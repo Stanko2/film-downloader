@@ -53,14 +53,20 @@ async function reloadMovieDatabase() {
 }
 
 router.get('/reload', async (_req, res) => {
-  await reloadMovieDatabase()
+  await reloadMovieDatabase().catch((err) => {
+    console.error(err);
+    res.render('error', {error: err});
+  })
   res.redirect('/')
 })
 
 router.get('/', async (_req, res)=>{
   const data = JSON.parse(await db.client.get('moviesLibrary') || '[]')
   if(data.length == 0) {
-    await reloadMovieDatabase()
+    await reloadMovieDatabase().catch((err) => {
+      console.error(err);
+      res.render('error', {error: err});
+    })
   }
   res.render('pages/movies/list', {
     films: data
