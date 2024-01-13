@@ -28,10 +28,16 @@
                         </button>
                         <div class="card-body collapse" id="collapse-<%- i %>">
                             <h6>Name: <%- stream.name %></h6>
-                            <p>Size: <%- stream.metadata.size %></p>
-                            <p>Bit rate: <%- stream.metadata.bit_rate %></p>
-                            <p>Resolution: <span class="badge bg-warning"> <%- stream.resolution.width %>&times;<%- stream.resolution.height %></span></p>
-                            <p>Duration: <%- stream.metadata.duration %></p>
+                            <% if (!stream.error) { %>                     
+                                <p>Size: <%- stream.metadata.size %></p>
+                                <p>Bit rate: <%- stream.metadata.bit_rate %></p>
+                                <p>Resolution: <span class="badge bg-warning"> <%- stream.resolution.width %>&times;<%- stream.resolution.height %></span></p>
+                                <p>Duration: <%- stream.metadata.duration %></p>
+                            <% } else { %>
+                                <div class="alert alert-danger">
+                                    <p><%- stream.error %></p>
+                                </div>
+                            <% } %>
                         </div>
                     </li>
                 <% }) %>

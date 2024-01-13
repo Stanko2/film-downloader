@@ -104,7 +104,12 @@ router.get('/:id/streams', async (req,res) => {
   const details = await getShowDetails(showName) || null
   for (const stream of streamNames) {
     const p = path.join(location, showName, stream)
-    const data = await getStreamMetadata(p, stream)
+    const data = await getStreamMetadata(p, stream).catch((err)=> {
+      return {
+        name: stream,
+        error: err
+      }
+    })
     streams.push(data)
   }
   res.render('pages/tvShows/stats', { film: {
@@ -179,11 +184,11 @@ router.get('/download/:id', async (req,res) => {
 })
 
 router.post('/download/:id', (req, res) => {
-  res.redirect('/series')
   if (req.body.quality == undefined || req.body.source == undefined) {
     res.render('error', {error: 'No quality or source selected'})
     return
   }
+  res.redirect('/series')
   getTvShowFromID(req.params.id).then(async (data)=> {
     for await (const link of getDownloadLinks(data, req.body.source, (season: number, episode: number) => {
      return req.body['season-' + season] && (req.body['season-' + season].includes(episode.toString()) || req.body['season-' + season] == episode.toString())

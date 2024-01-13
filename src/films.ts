@@ -76,7 +76,12 @@ router.get('/:id/streams', async (req,res) => {
   const details = await getMovieDetails(filmName) || null
   for (const stream of streamNames) {
     const p = path.join(location, filmName, stream)
-    const data = await getStreamMetadata(p, stream)
+    const data = await getStreamMetadata(p, stream).catch((err)=> {
+      return {
+        name: stream,
+        error: err
+      }
+    })
     streams.push(data)
   }
   res.render('pages/movies/stats', { film: {
