@@ -183,7 +183,7 @@ router.post('/download/:id', async (req, res) => {
   }
   
   res.redirect('/films')
-  new Downloader(url, path.join(location, dirName), dirName, (success)=> {return}, captions, streamType);
+  new Downloader(url, path.join(location, dirName), dirName, ()=> {return}, captions, streamType);
 })
 
 async function getProviders(movieData: MovieDB.Responses.Movie.GetDetails, source: string | undefined) {

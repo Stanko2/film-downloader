@@ -24,29 +24,30 @@ class Database {
     async addDownloadCommand(command: DownloadCommand): Promise<number> {
         if(command.id == -1){
             if (await this.client.exists("downloadId") == 0) {
-                await this.client.set("downloadId", await this.client.lLen("Downloads"))
+                await this.client.set("downloadId", 0);
             }
             command.id = await this.client.incr("downloadId")
         }
-        await this.client.rPush("Downloads", JSON.stringify(command))
+        await this.client.set("Downloads:" + command.id, JSON.stringify(command))
         return command.id
     }
 
-    async getFirstDownloadCommand(): Promise<DownloadCommand | null> {
-        const res = await this.client.lPop("Downloads")
-        return JSON.parse(res || 'null') as DownloadCommand
-    }
 
     async getAllDownloads(): Promise<DownloadCommand[]> {
-        return (await this.client.lRange("Downloads", 0, -1)).map(x => JSON.parse(x))
+        const keys = await this.client.keys("Downloads:*");
+        if(keys.length == 0) return [];
+        
+        const res = await this.client.mGet(keys);
+        return res.map(x => JSON.parse(x || 'null') as DownloadCommand)
     }
 
     async updateDownloadById(id: number, data: DownloadCommand) {
-        this.client.lSet("Downloads", id, JSON.stringify(data))
+        this.client.set("Downloads:" + id, JSON.stringify(data))
     }
 
     async getDownloadById(id: number): Promise<DownloadCommand> {
-        const res = await this.client.lIndex("Downloads", id)
+        const res = await this.client.get('Downloads:' + id);
+        
         return JSON.parse(res || 'null') as DownloadCommand
     }
 
@@ -55,7 +56,7 @@ class Database {
     }
 
     async removeDownloadById(id: number): Promise<void> {
-        this.client.lRem("Downloads", 1, JSON.stringify(await this.getDownloadById(id)))
+        this.client.del('Downloads:' + id);
     }
 
     async setDownloadCron(val: string): Promise<void> {

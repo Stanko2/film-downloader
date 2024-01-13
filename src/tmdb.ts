@@ -34,7 +34,7 @@ export async function getMovieFromID(id: string): Promise<MovieDB.Responses.Movi
         throw new Error('TMDB API not initialized')
     }
 
-    const cached = await db.client.get('tmdbDataMovies-'+id);
+    const cached = await db.client.get('tmdbDataMovies:'+id);
     if (cached) {
         return JSON.parse(cached);
     }
@@ -45,7 +45,7 @@ export async function getMovieFromID(id: string): Promise<MovieDB.Responses.Movi
         }
     })
 
-    db.client.set('tmdbDataMovies-'+id, JSON.stringify(res.data))
+    db.client.set('tmdbDataMovies:'+id, JSON.stringify(res.data))
     return res.data
 }
 
@@ -54,7 +54,7 @@ export async function getTvShowFromID(id: string): Promise<MovieDB.Responses.TV.
         throw new Error('TMDB API not initialized')
     }
     
-    const cached = await db.client.get('tmdbDataTV-'+id);
+    const cached = await db.client.get('tmdbDataTV:'+id);
     if (cached) {
         return JSON.parse(cached);
     }
@@ -65,7 +65,7 @@ export async function getTvShowFromID(id: string): Promise<MovieDB.Responses.TV.
         }
     })
     
-    db.client.set('tmdbDataTV-'+id, JSON.stringify(res.data))
+    db.client.set('tmdbDataTV:'+id, JSON.stringify(res.data))
     return res.data
 }
 

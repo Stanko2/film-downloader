@@ -41,6 +41,7 @@ export default class Downloader {
         if(this.id == -1) {
             db.addDownloadCommand(this.toDownloadCommand('scheduled')).then(id => {
                 this.id = id
+                console.log(this.id);
                 this.init()
             });
         }
