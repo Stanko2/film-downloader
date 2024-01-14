@@ -7,7 +7,7 @@ import { DownloadProgress, Downloader } from '.';
 import axios from 'axios';
 
 export default class HlsDownloader extends Downloader  {
-    resumable = false
+    resumable = true
     downloaded = 0
     size = 0
     queue: Promise<void>[] = []
@@ -46,7 +46,7 @@ export default class HlsDownloader extends Downloader  {
             const p = path.join(this.segmentsDir, segment)
             paths.push(p)
             
-            if (existsSync(p)) {
+            if (existsSync(p) || HlsDownloader.filesProcessing.has(segment)) {
                 done++
                 progressCallback({
                     downloaded: done,
@@ -76,8 +76,9 @@ export default class HlsDownloader extends Downloader  {
 
         if (HlsDownloader.filesProcessing.has(file.split('.')[0])) return false
         HlsDownloader.filesProcessing.add(file.split('.')[0])
+        this.resumable = false
         await this.mergeSegments(dir, file.split('.')[0], paths)
-
+        console.log(`Finished Download ${this.name}`)
         return true
     }
 

@@ -29,16 +29,20 @@ export abstract class Downloader {
         if (fs.existsSync(this.name)) {
             this.downloaded = fs.statSync(this.name).size
         }
-        
+
         let needRestart = false
         let restartTimeout: NodeJS.Timeout | undefined
         const callback = function(progress: DownloadProgress) {
             console.log(progress.downloaded, progress.total, progress.percent);
             clearTimeout(restartTimeout)
+            progressCallback(progress)
+            if(progress.percent == 100) {
+                needRestart = false
+                return
+            }
             restartTimeout = setTimeout(() => {
                 needRestart = true
             }, Downloader.ProgressTimeout);
-            progressCallback(progress)
         }
         let interval: NodeJS.Timer | undefined
         await Promise.all([
