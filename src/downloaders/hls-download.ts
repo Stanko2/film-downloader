@@ -162,7 +162,7 @@ export default class HlsDownloader extends Downloader  {
                             await fs.copyFile(`${name}.final.mp4`, `${dest}/${name}.mp4`);
                             await fs.rm(`${name}.mp4`);
                             await fs.rm(`${name}.final.mp4`);
-                            await fs.rm(this.segmentsDir, {recursive: true})
+                            await fs.rm(this.segmentsDir, {recursive: true, force: true})
                             resolve()
                         }
                     })
