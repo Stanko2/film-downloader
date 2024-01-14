@@ -1,6 +1,6 @@
 import {createClient, RedisClientType} from 'redis'
 import fs from 'fs'
-import { DownloadCommand } from './downloader'
+import { IDownloadCommand } from './downloadCommand'
 import { validate } from 'node-cron'
 
 class Database {
@@ -21,7 +21,7 @@ class Database {
         this.client.connect()
     }
 
-    async addDownloadCommand(command: DownloadCommand): Promise<number> {
+    async addDownloadCommand(command: IDownloadCommand): Promise<number> {
         if(command.id == -1){
             if (await this.client.exists("downloadId") == 0) {
                 await this.client.set("downloadId", 0);
@@ -33,22 +33,22 @@ class Database {
     }
 
 
-    async getAllDownloads(): Promise<DownloadCommand[]> {
+    async getAllDownloads(): Promise<IDownloadCommand[]> {
         const keys = await this.client.keys("Downloads:*");
         if(keys.length == 0) return [];
         
         const res = await this.client.mGet(keys);
-        return res.map(x => JSON.parse(x || 'null') as DownloadCommand)
+        return res.map(x => JSON.parse(x || 'null') as IDownloadCommand)
     }
 
-    async updateDownloadById(id: number, data: DownloadCommand) {
+    async updateDownloadById(id: number, data: IDownloadCommand) {
         this.client.set("Downloads:" + id, JSON.stringify(data))
     }
 
-    async getDownloadById(id: number): Promise<DownloadCommand> {
+    async getDownloadById(id: number): Promise<IDownloadCommand> {
         const res = await this.client.get('Downloads:' + id);
         
-        return JSON.parse(res || 'null') as DownloadCommand
+        return JSON.parse(res || 'null') as IDownloadCommand
     }
 
     async getDownloadCron(): Promise<string> {

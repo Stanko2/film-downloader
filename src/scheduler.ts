@@ -1,6 +1,6 @@
 import { schedule, ScheduledTask } from "node-cron"
 import db from "./db"
-import { downloaders } from "./downloader"
+import { downloaders } from "./downloadCommand"
 
 
 class Scheduler {

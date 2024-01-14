@@ -4,7 +4,7 @@ import settings from './settings'
 import films from './films'
 import series from './series'
 import db from './db'
-import { downloaders, Init } from './downloader'
+import { downloaders, Init } from './downloadCommand'
 
 const app = express()
 

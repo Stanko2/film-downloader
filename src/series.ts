@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import fs from 'fs'
 import db from './db'
-import Downloader from './downloader'
+import DownloadCommand from './downloadCommand'
 import path from 'path'
 import { IsVideo, parseHlsQuality, getStreamMetadata, listSources } from './util'
 import { getTvShowFromID, init, searchSeries } from './tmdb'
@@ -220,7 +220,7 @@ router.post('/download/:id', (req, res) => {
         throw new Error(`no media found for quality ${req.body.quality}`)
       }
 
-      new Downloader(src, await db.getSaveLocation('series') + '/' + dirName, fileName, ()=> {
+      new DownloadCommand(src, await db.getSaveLocation('series') + '/' + dirName, fileName, ()=> {
         return
       }, captions, link.src.stream.type)
       

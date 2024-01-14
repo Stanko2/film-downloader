@@ -2,7 +2,7 @@ import { Router } from 'express'
 import fs from 'fs'
 import db from './db'
 import { URL } from 'url'
-import Downloader from './downloader'
+import DownloadCommand from './downloadCommand'
 import path from 'path'
 import { IsVideo, getStreamMetadata, listSources, parseHlsQuality } from './util'
 import { getMovieFromID, init, searchMovie } from './tmdb'
@@ -103,7 +103,7 @@ router.post('/add', async (req, res)=> {
         const url:string = req.body.FilmURL
         new URL(url)
         const name = `${req.body.FilmName} (${req.body.releaseYear})`
-        new Downloader(url, await db.getSaveLocation('films') + `/${name}`, name, (out)=> {
+        new DownloadCommand(url, await db.getSaveLocation('films') + `/${name}`, name, (out)=> {
             if (out){
                 res.redirect('/films')
             }
@@ -194,7 +194,7 @@ router.post('/download/:id', async (req, res) => {
   }
   
   res.redirect('/films')
-  new Downloader(url, path.join(location, dirName), dirName, ()=> {return}, captions, streamType);
+  new DownloadCommand(url, path.join(location, dirName), dirName, ()=> {return}, captions, streamType);
 })
 
 async function getProviders(movieData: MovieDB.Responses.Movie.GetDetails, source: string | undefined) {

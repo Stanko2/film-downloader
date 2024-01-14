@@ -26,7 +26,7 @@
             </form>
         </div>
         <div class="progress" role="progressbar">
-            <div class="progress-bar" style="width: <%- download.progress * 100 %>%"><%- (download.progress * 100).toFixed(2) %>%</div>
+            <div class="progress-bar" style="width: <%- download.progress || 0 %>%"><%- download.progress?.toFixed(2) %>%</div>
         </div>
     </li>
 <% } %>
