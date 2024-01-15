@@ -42,13 +42,12 @@ export default class HlsDownloader extends Downloader  {
         console.log(`downloading ${segments.length} segments`);
         const paths: string[] = []
         for (const segment of segments) {
-            if(HlsDownloader.filesProcessing.has(segment)) return
-            HlsDownloader.filesProcessing.add(segment);
             const p = path.join(this.segmentsDir, segment)
             paths.push(p)
             
             if (existsSync(p)) {
                 done++
+                if(HlsDownloader.filesProcessing.has(segment)) continue
                 progressCallback({
                     downloaded: done,
                     total: segments.length,
@@ -57,6 +56,7 @@ export default class HlsDownloader extends Downloader  {
                 
                 continue
             }
+            HlsDownloader.filesProcessing.add(segment);
             this.queue.push(this.downloadSegment(baseUrl, segment, p).then(()=> {
                 done++
                 progressCallback({
