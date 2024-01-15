@@ -9,8 +9,10 @@ export interface DownloadProgress {
 export abstract class Downloader {
     resumable = false
     downloaded = 0
-    static ProgressTimeout = 4000
+    static ProgressTimeout = 10000
     static busy = false
+
+    static filesProcessing: Set<string> = new Set()
     constructor(protected url: string, protected name: string) {
      
     }
@@ -48,7 +50,7 @@ export abstract class Downloader {
         }
         let interval: NodeJS.Timer | undefined
         let success = false
-
+        Downloader.filesProcessing.clear()
         while(!success) {
             try {
                 await Promise.race([

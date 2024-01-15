@@ -12,7 +12,6 @@ export default class HlsDownloader extends Downloader  {
     size = 0
     queue: Promise<void>[] = []
     segmentsDir = ''
-    private static filesProcessing: Set<string> = new Set()
     constructor(protected url: string, protected filename: string) {
         super(url, filename)
     }
@@ -43,10 +42,12 @@ export default class HlsDownloader extends Downloader  {
         console.log(`downloading ${segments.length} segments`);
         const paths: string[] = []
         for (const segment of segments) {
+            if(HlsDownloader.filesProcessing.has(segment)) return
+            HlsDownloader.filesProcessing.add(segment);
             const p = path.join(this.segmentsDir, segment)
             paths.push(p)
             
-            if (existsSync(p) || HlsDownloader.filesProcessing.has(segment)) {
+            if (existsSync(p)) {
                 done++
                 progressCallback({
                     downloaded: done,
@@ -76,8 +77,8 @@ export default class HlsDownloader extends Downloader  {
 
         await Promise.all(this.queue)
 
-        if (HlsDownloader.filesProcessing.has(file.split('.')[0])) return
-        HlsDownloader.filesProcessing.add(file.split('.')[0])
+        if (HlsDownloader.filesProcessing.has(file)) return
+        HlsDownloader.filesProcessing.add(file)
         this.resumable = false
         await this.mergeSegments(dir, file.split('.')[0], paths)
         console.log(`Finished Download ${this.name}`)
@@ -163,7 +164,7 @@ export default class HlsDownloader extends Downloader  {
                             await fs.copyFile(`${name}.final.mp4`, `${dest}/${name}.mp4`);
                             await fs.rm(`${name}.mp4`);
                             await fs.rm(`${name}.final.mp4`);
-                            await fs.rm(this.segmentsDir, {recursive: true, force: true})
+                            await this.removeSegments()
                             resolve()
                         }
                     })
@@ -174,9 +175,16 @@ export default class HlsDownloader extends Downloader  {
     }
     
 
+    async removeSegments() {
+        const files = await fs.readdir(this.segmentsDir);
+        for (const file of files) {
+            await fs.rm(path.join(this.segmentsDir, file))
+        }
+
+        await fs.rm(this.segmentsDir)
+    }
+
     async downloadSegment(url: string, segName: string, dest: string, retry = 0) {
-        if(HlsDownloader.filesProcessing.has(segName)) return
-        HlsDownloader.filesProcessing.add(segName);
         // eslint-disable-next-line no-async-promise-executor
         return new Promise<void>(async (resolve, reject) => {
             const timeout = setTimeout(async () => {
