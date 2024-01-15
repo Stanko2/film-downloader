@@ -190,14 +190,10 @@ export default class HlsDownloader extends Downloader  {
         await fs.writeFile(dest, Buffer.from(''))
         while (retry < 10) {
             try {
-                const timeout = setTimeout(() => {
-                    throw new Error('Timeout');
-                }, 4000);
-                const res = await axios.get(url + '/' + segName, {responseType: 'arraybuffer'})
+                const res = await axios.get(url + '/' + segName, {responseType: 'arraybuffer', timeout: 4000})
                 const buf = res?.data
                 if(buf){
                     await fs.writeFile(dest, Buffer.from(buf))
-                    clearTimeout(timeout)
                     return
                 }
                 else throw new Error('No data')
