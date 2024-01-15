@@ -51,7 +51,7 @@ app.post('/:id/cancel', (req,res) => {
 
 app.post('/:id/restart', (req,res) => {
   const id = parseInt(req.params.id)
-  db.updateDownloadById(id, downloaders[id].toDownloadCommand('scheduled')).then(()=> {
+  db.updateDownloadById(id, downloaders[id].toJSON('scheduled')).then(()=> {
     downloaders[id].startDownload()
     res.redirect('/')
   })

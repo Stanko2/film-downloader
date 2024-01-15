@@ -33,7 +33,7 @@ export default class HlsDownloader extends Downloader  {
         return true
     }
 
-    override async startDownload(progressCallback: (progress: DownloadProgress) => void): Promise<boolean> {
+    override async startDownload(progressCallback: (progress: DownloadProgress) => void): Promise<void> {
         const file = this.filename.split('/').pop() || ''
         const dir = this.filename.split('/').slice(0, -1).join('/')
         const segments = await this.getSegments(this.url)
@@ -63,7 +63,9 @@ export default class HlsDownloader extends Downloader  {
                     total: segments.length,
                     percent: (done / segments.length) * 100
                 })            
-            }).catch(console.error))
+            }).catch(err => {
+                throw err
+            }))
 
             if (this.queue.length > 10) {
                 await Promise.all(this.queue)
@@ -74,12 +76,11 @@ export default class HlsDownloader extends Downloader  {
 
         await Promise.all(this.queue)
 
-        if (HlsDownloader.filesProcessing.has(file.split('.')[0])) return false
+        if (HlsDownloader.filesProcessing.has(file.split('.')[0])) return
         HlsDownloader.filesProcessing.add(file.split('.')[0])
         this.resumable = false
         await this.mergeSegments(dir, file.split('.')[0], paths)
         console.log(`Finished Download ${this.name}`)
-        return true
     }
 
     async getSegments(playlistURL: string): Promise<string[]> {

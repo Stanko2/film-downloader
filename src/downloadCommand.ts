@@ -15,7 +15,7 @@ export interface IDownloadCommand {
     state: 'complete' | 'pause' | 'error' | 'scheduled' | 'inProgress';
     id: number
     type: 'hls' | 'file'
-    error?: string
+    error?: Error
     progress?: number
 }
 
@@ -41,7 +41,7 @@ export default class DownloadCommand {
     constructor(private videoURL: string, private dest: string, private name: string, private cb: (success: boolean) => void, captionURLs: Record<string, string>, private type: DownloadType, private id: number = -1) {
         if(!fs.existsSync(dest)) fs.mkdirSync(dest, {recursive: true, mode: 0o777})
         if(this.id == -1) {
-            db.addDownloadCommand(this.toDownloadCommand('scheduled')).then(id => {
+            db.addDownloadCommand(this.toJSON('scheduled')).then(id => {
                 this.id = id
                 this.init()
             });
@@ -68,15 +68,18 @@ export default class DownloadCommand {
         if(!this.downloader) return false
         const state = (await db.getDownloadById(this.id)).state
         if(state === 'scheduled'){
-            db.updateDownloadById(this.id, this.toDownloadCommand('inProgress'))
+            db.updateDownloadById(this.id, this.toJSON('inProgress'))
             console.log(`Starting Download ${this.name}`);
             this.downloader.start((p) => {
                 db.updateDownloadById(this.id, {
-                    ...this.toDownloadCommand('inProgress'),
+                    ...this.toJSON('inProgress'),
                     progress: p.percent
                 })
-            }).then((success) => {
-                db.updateDownloadById(this.id, this.toDownloadCommand(success ? 'complete' : 'error'))
+            }).then(() => {
+                db.updateDownloadById(this.id, this.toJSON('complete'))
+            }).catch((err: Error) => {
+                db.updateDownloadById(this.id, {...this.toJSON('error'), error: err });
+                console.error(err.message);
             })
         }
         return false
@@ -91,10 +94,10 @@ export default class DownloadCommand {
 
     cancel(): void {
         this.downloader?.cancel()
-        db.updateDownloadById(this.id, this.toDownloadCommand('error'))
+        db.updateDownloadById(this.id, this.toJSON('error'))
     }
 
-    toDownloadCommand(state: 'complete' | 'pause' | 'error' | 'scheduled' | 'inProgress'): IDownloadCommand {
+    toJSON(state: 'complete' | 'pause' | 'error' | 'scheduled' | 'inProgress'): IDownloadCommand {
         return {
             url: this.videoURL,
             name: this.name,

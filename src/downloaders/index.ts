@@ -10,11 +10,12 @@ export abstract class Downloader {
     resumable = false
     downloaded = 0
     static ProgressTimeout = 4000
+    static busy = false
     constructor(protected url: string, protected name: string) {
      
     }
 
-    abstract startDownload(progressCallback: (progress: DownloadProgress) => void): Promise<boolean>
+    abstract startDownload(progressCallback: (progress: DownloadProgress) => void): Promise<void>
 
     abstract init(): Promise<boolean>
 
@@ -22,7 +23,8 @@ export abstract class Downloader {
         await this.init()
     }
 
-    async start(progressCallback: (progress: DownloadProgress) => void): Promise<boolean> {
+    async start(progressCallback: (progress: DownloadProgress) => void): Promise<void> {
+        Downloader.busy = true
         if(!this.resumable) {
             this.downloaded = 0
         }
@@ -45,28 +47,41 @@ export abstract class Downloader {
             }, Downloader.ProgressTimeout);
         }
         let interval: NodeJS.Timer | undefined
-        await Promise.all([
-            this.startDownload(callback),
-            new Promise<void>((resolve, reject) => {
-                interval = setInterval(() => {
-                    if(needRestart) {
-                        console.log('Restarting Download');
-                        clearInterval(interval)
-                        reject()
-                    }
-                }, 100);
-                setTimeout(() => {
-                    resolve()
-                }, 3600 * 1000)
-            })
-        ]).catch(() => {
-            this.cancel()
-            console.log('Retrying download');
-            this.start(progressCallback)
-        })
-        clearInterval(interval)
+        let success = false
 
-        return true
+        while(!success) {
+            try {
+                await Promise.race([
+                    this.startDownload(callback),
+                    new Promise<void>((resolve, reject) => {
+                        interval = setInterval(() => {
+                            if(needRestart) {
+                                console.log('Restarting Download');
+                                clearInterval(interval)
+                                reject(new Error('Download stuck'))
+                            }
+                        }, 100);
+                        setTimeout(() => {
+                            resolve()
+                        }, 3600 * 1000)
+                    })
+                ])
+            }
+            catch(err) {
+                if((err as Error).message === 'Download stuck') {
+                    clearInterval(interval)
+                    this.cancel()
+                    continue
+                }
+                Downloader.busy = false
+                throw err
+            }
+
+            success = true
+        }
+
+        clearInterval(interval)
+        Downloader.busy = false
     }
 
     abstract cancel(): void;

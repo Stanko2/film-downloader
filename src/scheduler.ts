@@ -1,6 +1,7 @@
 import { schedule, ScheduledTask } from "node-cron"
 import db from "./db"
 import { downloaders } from "./downloadCommand"
+import { Downloader } from "./downloaders"
 
 
 class Scheduler {
@@ -15,16 +16,9 @@ class Scheduler {
     
     async run(r: Date | 'manual' | 'init') {
         console.log(r.toString() + '| ran automatic download')
-        let i = 0;
-        let download = await db.getDownloadById(i)
-        while(download && download.state != 'scheduled') {
-            i++
-            download = await db.getDownloadById(i)
-        }
-        console.log(downloaders[download.id])
-        if(download.state == 'scheduled'){
-            downloaders[download.id].startDownload()
-        }
+        if(Downloader.busy) return
+        const download = (await db.getAllDownloads()).sort((a,b)=> a.id - b.id).filter(d => d.state == 'scheduled')[0]
+        downloaders[download.id].startDownload()
     }
     
     async updateCron(newCron: string){

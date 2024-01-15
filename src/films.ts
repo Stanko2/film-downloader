@@ -159,6 +159,7 @@ router.get('/download/:id', async (req,res) => {
   }
 
   res.render('pages/qualityChooser', {
+    pageType: 'movie',
     title: data.title,
     qualities,
     type: stream.type,
