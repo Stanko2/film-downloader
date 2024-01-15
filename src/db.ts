@@ -52,7 +52,7 @@ class Database {
     }
 
     async getDownloadCron(): Promise<string> {
-        return await this.client.get('downloadCron') || '0 0 0 * * *';
+        return await this.client.get('downloadCron') || '0 0 * * *';
     }
 
     async removeDownloadById(id: number): Promise<void> {
