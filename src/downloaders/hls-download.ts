@@ -181,7 +181,7 @@ export default class HlsDownloader extends Downloader  {
             await fs.rm(path.join(this.segmentsDir, file))
         }
 
-        await fs.rm(this.segmentsDir)
+        await fs.rmdir(this.segmentsDir)
     }
 
     async downloadSegment(url: string, segName: string, dest: string) {
