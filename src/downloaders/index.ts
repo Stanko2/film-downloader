@@ -72,7 +72,9 @@ export abstract class Downloader {
             catch(err) {
                 if((err as Error).message === 'Download stuck') {
                     clearInterval(interval)
+                    clearTimeout(restartTimeout)
                     this.cancel()
+                    needRestart = false
                     continue
                 }
                 Downloader.busy = false
