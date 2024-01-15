@@ -45,7 +45,7 @@ export default class HlsDownloader extends Downloader  {
             const p = path.join(this.segmentsDir, segment)
             paths.push(p)
             
-            if (existsSync(p)) {
+            if (existsSync(p) || HlsDownloader.filesProcessing.has(segment)) {
                 done++
                 if(HlsDownloader.filesProcessing.has(segment)) continue
                 progressCallback({
@@ -184,20 +184,28 @@ export default class HlsDownloader extends Downloader  {
         await fs.rm(this.segmentsDir)
     }
 
-    async downloadSegment(url: string, segName: string, dest: string, retry = 0) {
-        // eslint-disable-next-line no-async-promise-executor
-        return new Promise<void>(async (resolve, reject) => {
-            const timeout = setTimeout(async () => {
-                if(retry < 10) 
-                    this.downloadSegment(url, segName, dest, retry + 1).then(resolve).catch(reject);
-            }, 4000);
-            await fs.writeFile(dest, Buffer.from(''))
-            const res = await axios.get(url + '/' + segName, {responseType: 'arraybuffer'}).catch(reject)
-            const buf = res?.data
-            clearTimeout(timeout)
-            if(buf)
-                await fs.writeFile(dest, Buffer.from(buf)).catch(reject)
-            resolve()
-        })
+    async downloadSegment(url: string, segName: string, dest: string) {
+        
+        let retry = 0
+        await fs.writeFile(dest, Buffer.from(''))
+        while (retry < 10) {
+            try {
+                const timeout = setTimeout(() => {
+                    throw new Error('Timeout');
+                }, 4000);
+                const res = await axios.get(url + '/' + segName, {responseType: 'arraybuffer'})
+                const buf = res?.data
+                if(buf){
+                    await fs.writeFile(dest, Buffer.from(buf))
+                    clearTimeout(timeout)
+                    return
+                }
+                else throw new Error('No data')
+            } catch (error) {
+                retry++
+                continue
+            }
+        }
+
     }
 }
