@@ -119,20 +119,28 @@ router.post('/add', async (req, res)=> {
 })
 
 router.get('/:id/watch/:streamId/file', async (req,res) => {
-  const movies = await getAllMovies()
-  const filmName = movies[parseInt(req.params.id)] 
-  const stream = fs.readdirSync(path.join(await db.getSaveLocation('series'), filmName)).filter(x=> IsVideo(x))[parseInt(req.params.streamId)];
-  res.sendFile(path.join(await db.getSaveLocation('series'), filmName, stream))
+  try {
+    const movies = await getAllMovies()
+    const filmName = movies[parseInt(req.params.id)] 
+    const stream = fs.readdirSync(path.join(await db.getSaveLocation('series'), filmName)).filter(x=> IsVideo(x))[parseInt(req.params.streamId)];
+    res.sendFile(path.join(await db.getSaveLocation('series'), filmName, stream))
+  } catch (error) {
+    res.render('error', {error})
+  }
 })
 
 router.get('/:id/watch/:streamId', async (req,res) => {
-  const movies = await getAllMovies()
-  const filmName = movies[parseInt(req.params.id)] 
-  const details = await getMovieDetails(filmName);
-  res.render('videoplayer', {
-    thumbnail: details?.backdrop_path,
-    url: `/series/${req.params.id}/watch/${req.params.streamId}/file`,
-  })
+  try {
+    const movies = await getAllMovies()
+    const filmName = movies[parseInt(req.params.id)] 
+    const details = await getMovieDetails(filmName);
+    res.render('videoplayer', {
+      thumbnail: details?.backdrop_path,
+      url: `/series/${req.params.id}/watch/${req.params.streamId}/file`,
+    })
+  } catch (error) {
+    res.render('error', {error})
+  }
 })
 
 
