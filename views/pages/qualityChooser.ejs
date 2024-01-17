@@ -32,7 +32,7 @@
             <hr>
             <% if (pageType == 'series') { %>
                 <% seasons.forEach((season, i) => { %>
-                    <h4>Season #<%- i %></h4>
+                    <h4>Season #<%- i + 1 %></h4>
                     <div class="d-flex mb-4">
                         <% for( let episode = 1; episode <= season; episode++ ) { %>
                             <div class="form-check form-inline">

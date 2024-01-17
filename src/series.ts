@@ -3,8 +3,8 @@ import fs from 'fs'
 import db from './db'
 import DownloadCommand from './downloadCommand'
 import path from 'path'
-import { IsVideo, parseHlsQuality, getStreamMetadata, listSources } from './util'
-import { getTvShowFromID, init, searchSeries } from './tmdb'
+import { IsVideo, parseHlsQuality, getStreamMetadata, listSources, parseFileName, parseSeasonEpisode } from './util'
+import { getSeasonDetails, getTvShowFromID, init, searchSeries } from './tmdb'
 import { FileBasedStream, Qualities, RunOutput, makeProviders, makeStandardFetcher, targets } from '@movie-web/providers'
 import MovieDB from 'node-themoviedb'
 import fetch from 'node-fetch'
@@ -46,18 +46,17 @@ async function getAllShows() {
 }
 
 async function getShowDetails(name: string) {
-  name = name.split('(')[0]
-  console.log(name);
-  
-  let id = parseInt(await db.client.get('series:'+ name) || 'NaN')
+  const [title] = parseFileName(name)
+  console.log(title)
+  let id = parseInt(await db.client.get('series:'+ name.replaceAll(' ', '-')) || 'NaN')
   if(isNaN(id)) {
-    const data = await searchSeries(name)
-    console.log(data);
-    
+    const data = await searchSeries(title)
     if(data.length == 0) {
+      console.log('No data found for ' + name);
+      
       return null
     }
-    await db.client.set('series:'+ name, data[0].id)
+    await db.client.set('series:'+ name.replaceAll(' ', '-'), data[0].id)
     id = data[0].id
   }
   
@@ -116,16 +115,49 @@ router.get('/:id/streams', async (req,res) => {
         error: err
       }
     })
-    streams.push(data)
+    const file = parseSeasonEpisode(stream)
+    console.log(file);
+    
+    if(!file || !details) {
+      streams.push({
+        streamData: data,
+        episodeData: null
+      })
+      continue
+    }
+    streams.push({
+      streamData: data,
+      episodeData: (await getSeasonDetails(details.id.toString(), file[0], file[1]))
+    })
+
   }
-  res.render('pages/tvShows/stats', { film: {
+  res.render('pages/tvShows/stats', { 
+    show: {
       name: showName,
       streams: streams,
     },
-    details: details
+    details: details,
+    id: req.params.id
   })
 })
   
+router.get('/:id/watch/:streamId/file', async (req,res) => {
+  const shows = await getAllShows()
+  const showName = shows[parseInt(req.params.id)] 
+  const stream = fs.readdirSync(path.join(await db.getSaveLocation('series'), showName)).filter(x=> IsVideo(x))[parseInt(req.params.streamId)];
+  res.sendFile(path.join(await db.getSaveLocation('series'), showName, stream))
+})
+
+router.get('/:id/watch/:streamId', async (req,res) => {
+  const shows = await getAllShows()
+  const showName = shows[parseInt(req.params.id)] 
+  const details = await getShowDetails(showName);
+  res.render('videoplayer', {
+    thumbnail: details?.backdrop_path,
+    url: `/series/${req.params.id}/watch/${req.params.streamId}/file`,
+  })
+})
+
 router.get('/add', (_req, res) => {
     res.render('pages/tvShows/add')
 })

@@ -9,7 +9,7 @@
         <% } %>
     </div>
     <div class="col-8">
-        <h1><%- film.name %></h1>
+        <h1><%- details.title ?? film.name %></h1>
         <% if (details) { %>
             <p><%- details.overview %></p>
             <p>Released: <%- details.release_date %></p>
@@ -23,22 +23,25 @@
         <ul class="list-group">
             <% film.streams.forEach((stream, i) => { %>
                 <li class="card">
-                    <button class="card-header btn" data-bs-target="#collapse-<%- i %>" data-bs-toggle="collapse">
+                    <div class="card-header">
                         <%- stream.name %>
-                    </button>
-                    <div class="card-body collapse" id="collapse-<%- i %>">
-                        <h6>Name: <%- stream.name %></h6>
-                        <% if (!stream.error) { %>                     
-                            <p>Size: <%- stream.metadata.size %></p>
-                            <p>Bit rate: <%- stream.metadata.bit_rate %></p>
-                            <p>Resolution: <span class="badge bg-warning"> <%- stream.resolution.width %>&times;<%- stream.resolution.height %></span></p>
-                            <p>Duration: <%- stream.metadata.duration %></p>
-                        <% } else { %>
-                            <div class="alert alert-danger">
-                                <p><%- stream.error %></p>
-                            </div>
-                        <% } %>
+                    </div>
+                    <div class="card-body">
+                        <a class="btn btn-block btn-primary" href="/films/<%- id %>/watch/<%- i %>">Watch</a>
+                        <hr>
+                        <div class="d-flex justify-content-between">
+                            <% if (!stream.error) { %>                     
+                                <p>Size: <%- stream.metadata.size %></p>
+                                <p>Bit rate: <%- stream.metadata.bit_rate %></p>
+                                <p>Resolution: <span class="badge bg-warning"> <%- stream.resolution.width %>&times;<%- stream.resolution.height %></span></p>
+                                <p>Duration: <%- stream.metadata.duration %></p>
+                            <% } else { %>
+                                <div class="alert alert-danger">
+                                    <p><%- stream.error %></p>
+                                </div>
+                            <% } %>
                         </div>
+                    </div>
                 </li>
             <% }) %>    
         </ul>

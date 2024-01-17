@@ -86,3 +86,30 @@ export async function searchSeries(query: string) {
 
     return res.data.results
 }
+
+export async function getSeasonDetails(id: string, season: number, episode: number): Promise<MovieDB.Responses.TV.Episode.GetDetails> {
+    if(!api){
+        throw new Error('TMDB API not initialized')
+    }
+
+    const cached = await db.client.get('tmdbDataSeason:'+id+':'+season+':'+episode);
+    if (cached) {
+        return JSON.parse(cached);
+    }
+
+    const res = await api.tv.episode.getDetails({
+        pathParameters: {
+            tv_id: id,
+            season_number: season,
+            episode_number: episode
+        }
+    })
+
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
+    delete res.data.crew;
+    
+    await db.client.set('tmdbDataSeason:'+id+':'+season+':'+episode, JSON.stringify(res.data))
+
+    return res.data
+}

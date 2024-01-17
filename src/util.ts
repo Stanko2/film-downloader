@@ -1,6 +1,7 @@
 import { Qualities, makeProviders, makeStandardFetcher,  } from "@movie-web/providers";
 import { ffprobe } from "fluent-ffmpeg";
 import fetch from "node-fetch";
+import db from "./db";
 
 const videoExtensions = ['m4v', 'avi','mpg','mp4', 'webm', 'mov', 'mkv']
 
@@ -70,6 +71,10 @@ export function IsVideo(name: string): boolean {
 
 
 export async function getStreamMetadata(file: string, name: string) {
+  const cached = await db.client.get('streamData:'+file);
+  if(cached) {
+    return JSON.parse(cached)
+  }
   return new Promise((resolve, reject) => {
     ffprobe(file, (err, data)=> {
       if(err){
@@ -90,7 +95,9 @@ export async function getStreamMetadata(file: string, name: string) {
         })
       }
     })
-
+  }).then((data) => {
+    db.client.set('streamData:'+file, JSON.stringify(data))
+    return data
   })
 }
 
@@ -101,4 +108,20 @@ export function listSources() {
     target: "any"
   });
   return providers.listSources();  
+}
+
+export function parseFileName(name: string): [string, number | undefined] {
+  const match = name.match(/(.*) \((\d{4})\)/)
+  if(match) {
+    return [match[1], parseInt(match[2])]
+  }
+  return [name, undefined]
+}
+
+export function parseSeasonEpisode(name: string): [number, number] | undefined {
+  const match = name.match(/S(\d{2})E(\d{2})/)
+  if(match) {
+    return [parseInt(match[1]), parseInt(match[2])]
+  }
+  return undefined
 }

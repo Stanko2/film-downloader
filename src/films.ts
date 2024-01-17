@@ -4,7 +4,7 @@ import db from './db'
 import { URL } from 'url'
 import DownloadCommand from './downloadCommand'
 import path from 'path'
-import { IsVideo, getStreamMetadata, listSources, parseHlsQuality } from './util'
+import { IsVideo, getStreamMetadata, listSources, parseFileName, parseHlsQuality } from './util'
 import { getMovieFromID, init, searchMovie } from './tmdb'
 import { Qualities, RunnerOptions, makeProviders, makeStandardFetcher, targets } from '@movie-web/providers'
 import MovieDB from 'node-themoviedb'
@@ -26,13 +26,15 @@ async function getAllMovies() {
 }
 
 async function getMovieDetails(name: string) {
+  const [title, year] = parseFileName(name)
   let id = parseInt(await db.client.get('movies:'+ name.replaceAll(' ', '-')) || 'NaN')
   if(isNaN(id)) {
-    const data = await searchMovie(name, undefined)
+    const data = await searchMovie(title, year)
     if(data.length == 0) {
+      console.log('No data found')
       return null
     }
-    await db.client.set('movies:'+ name, data[0].id)
+    await db.client.set('movies:'+ name.replaceAll(' ', '-'), data[0].id)
     id = data[0].id
   }
   return await getMovieFromID(id.toString())
@@ -94,7 +96,8 @@ router.get('/:id/streams', async (req,res) => {
       name: filmName,
       streams: streams
     },
-    details
+    details,
+    id: req.params.id
   })
 })
   
@@ -114,6 +117,24 @@ router.post('/add', async (req, res)=> {
         res.render('error', { error: e })
     }
 })
+
+router.get('/:id/watch/:streamId/file', async (req,res) => {
+  const movies = await getAllMovies()
+  const filmName = movies[parseInt(req.params.id)] 
+  const stream = fs.readdirSync(path.join(await db.getSaveLocation('series'), filmName)).filter(x=> IsVideo(x))[parseInt(req.params.streamId)];
+  res.sendFile(path.join(await db.getSaveLocation('series'), filmName, stream))
+})
+
+router.get('/:id/watch/:streamId', async (req,res) => {
+  const movies = await getAllMovies()
+  const filmName = movies[parseInt(req.params.id)] 
+  const details = await getMovieDetails(filmName);
+  res.render('videoplayer', {
+    thumbnail: details?.backdrop_path,
+    url: `/series/${req.params.id}/watch/${req.params.streamId}/file`,
+  })
+})
+
 
 router.get('/add', (_req, res) => {
     res.render('pages/movies/add')
