@@ -9,7 +9,7 @@
             <% } %>
         </div>
         <div class="col-sm-8 col-12">
-            <h1><%- show.name %></h1>
+            <h1><%- details?.name ?? show.name %></h1>
             <% if (details) { %>
                 <p><%- details.overview %></p>
                 <p>First aired: <%- details.first_air_date %></p>
@@ -39,6 +39,7 @@
                                 <div class="col-lg-9 col-12">
                                     <p><%- stream.episodeData?.overview %></p>
                                     <a class="btn btn-block btn-primary" href="/series/<%- id %>/watch/<%- i %>">Watch</a>
+                                    <a class="btn btn-block btn-secondary" href="/series/<%- id %>/watch/<%- i %>/file" target="_blank">Download</a>
                                     <hr>
                                     <div class="d-flex justify-content-between">
                                         <% if (!stream.error) { %>                     

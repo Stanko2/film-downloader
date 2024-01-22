@@ -1,15 +1,15 @@
 <%- include('../../header') %>
 <div class="bg"></div>
 <div class="row align-items-center"  style="min-height: 95vh;">
-    <div class="col-4">
+    <div class="col-sm-4 d-none d-sm-block">
         <% if (details != null) { %>
             <img src="https://www.themoviedb.org/t/p/w1280<%= details.poster_path %>" alt="poster" class="w-100" />
         <% } else { %>
             <img src="https://via.placeholder.com/220x330.png?text=No+poster" alt="poster" class="w-100" />
         <% } %>
     </div>
-    <div class="col-8">
-        <h1><%- details.title ?? film.name %></h1>
+    <div class="col-sm-8 col-12">
+        <h1><%- details?.title ?? film.name %></h1>
         <% if (details) { %>
             <p><%- details.overview %></p>
             <p>Released: <%- details.release_date %></p>
@@ -27,13 +27,14 @@
                         <%- stream.name %>
                     </div>
                     <div class="card-body">
-                        <a class="btn btn-block btn-primary" href="/films/<%- id %>/watch/<%- i %>">Watch</a>
+                        <a class="btn btn-block btn-primary" href="/films/<%- id %>/watch/<%- i %>" target="_blank">Watch</a>
+                        <a class="btn btn-block btn-secondary" href="/films/<%- id %>/watch/<%- i %>/file" target="_blank">Download</a>
                         <hr>
                         <div class="d-flex justify-content-between">
                             <% if (!stream.error) { %>                     
                                 <p>Size: <%- stream.metadata.size %></p>
                                 <p>Bit rate: <%- stream.metadata.bit_rate %></p>
-                                <p>Resolution: <span class="badge bg-warning"> <%- stream.resolution.width %>&times;<%- stream.resolution.height %></span></p>
+                                <p>Resolution: <span class="badge bg-warning"> <%- stream?.resolution?.width %>&times;<%- stream?.resolution?.height %></span></p>
                                 <p>Duration: <%- stream.metadata.duration %></p>
                             <% } else { %>
                                 <div class="alert alert-danger">

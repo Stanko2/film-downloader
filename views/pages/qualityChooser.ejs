@@ -22,7 +22,7 @@
             <% }) %>
             <h3>Captions</h3>
             <div class="d-flex flex-wrap">
-                <% captions.forEach(caption => { %>
+                <% captions?.forEach(caption => { %>
                     <div class="form-check m-2">
                         <label class="form-check-label" for="caption<%= caption.text %>"><%= caption.text %></label>
                         <input class="form-check-input" type="checkbox" id="caption<%= caption.text %>" name="caption" value="<%- caption.text %>$$$<%- caption.value %>"/>
