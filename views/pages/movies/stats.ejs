@@ -28,7 +28,8 @@
                     </div>
                     <div class="card-body">
                         <a class="btn btn-block btn-primary" href="/films/<%- id %>/watch/<%- i %>" target="_blank">Watch</a>
-                        <a class="btn btn-block btn-secondary" href="/films/<%- id %>/watch/<%- i %>/file" target="_blank">Download</a>
+                        <a class="btn btn-block btn-secondary" href="/films/<%- id %>/watch/<%- i %>/file" target="_blank"
+                            download="<%- details?.title ?? film.name %>">Download</a>
                         <hr>
                         <div class="d-flex justify-content-between">
                             <% if (!stream.error) { %>                     
