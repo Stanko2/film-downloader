@@ -113,3 +113,15 @@ export async function getSeasonDetails(id: string, season: number, episode: numb
 
     return res.data
 }
+
+export async function getMovieImages(movie_id: string) {
+    if(!api){
+        throw new Error('TMDB API not initialized')
+    }
+
+    return api.movie.getImages({
+        pathParameters: {
+            movie_id
+        }
+    })
+}

@@ -136,7 +136,9 @@ router.get('/:id/watch/:streamId', async (req,res) => {
     const details = await getMovieDetails(filmName);
     res.render('videoplayer', {
       thumbnail: details?.backdrop_path,
+      poster: details?.poster_path,
       url: `/films/${req.params.id}/watch/${req.params.streamId}/file`,
+      title: details?.title || filmName,
     })
   } catch (error) {
     res.render('error', {error})

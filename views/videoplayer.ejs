@@ -1,5 +1,7 @@
 <head>
-    <link href="https://vjs.zencdn.net/8.9.0/video-js.css" rel="stylesheet" />
+    <!-- <link href="https://vjs.zencdn.net/8.9.0/video-js.css" rel="stylesheet" /> -->
+    <!-- <link href="https://unpkg.com/@videojs/themes@1/dist/fantasy/index.css" rel="stylesheet" /> -->
+    <link href="https://cdn.jsdelivr.net/gh/BMSVieira/moovie.js@latest/css/moovie.min.css" rel="stylesheet">
     <style>
         .video-js {
             width: 100%;
@@ -8,22 +10,91 @@
         body {
             margin: 0;
             padding: 0;
+            background-color: black;
+            max-height: 100vh;
+            user-select: none;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        ::-webkit-scrollbar {
+            width: 0px;
+            background: transparent;
+        }
+        .topbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 10rem;
+            background: rgb(2,0,36);
+            background: linear-gradient(180deg, var(--moovie_bg_controls) 0%, var(--moovie_bg_controls) 60%,  rgba(0,0,0,0) 90%, rgba(0,0,0,0) 100%);
+            z-index: 10;
+            color: white;
+            padding: 1rem 0;
+            transition: opacity .8s ease;
+            display: flex;
+            align-items: start;
+            justify-content: space-between;
+        }
+        .topbar img {
+            height: 100%;
+            width: auto;
+            margin-right: 1rem;
+            box-shadow: 0 0 3rem var(--moovie_bg_controls);
+            border-radius: 0.5rem;
+        }
+        .topbar img::before {
+            background: var(--moovie_bg_controls);
+            transform: scale(1.5);
+        }
+        .topbar h1 {
+            margin: 0;
+            margin-top: 0;
+            font-size: 4rem;
+            font-weight: 700;
+        }
+        .title {
+            display: flex;
+            height: 100%;
+            margin-left: 1rem;
+        }
+        .endText {
+            font-size: 1rem;
+            margin-right: 0.5rem;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+        }
+        .endText span {
+            display: block;
+            font-size: 3rem;
+            font-weight: bold;
+            font-family: monospace;
+        }
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: radial-gradient(ellipse at center, rgba(0,0,0,0) 0%,rgba(0,0,0,0.6) 50%,rgba(0,0,0,1) 100%);
+            pointer-events: none;
+            z-index: 1;
+            opacity: 0;
+            transition: opacity .3s ease;
         }
     </style>
+    <title><%- title %></title>
 </head>
   
 <body>
 <video
-    id="my-video"
-    class="video-js"
+    id="video"
+    class="video-js vjs-theme-fantasy"
     controls
     preload="auto"
-    width="640"
-    height="264"
     <% if (thumbnail) { %>
         poster="https://www.themoviedb.org/t/p/w1280<%- thumbnail %>"
     <% } %>
-    data-setup="{}"
 >
     <source src="<%- url %>" type="video/mp4" />
     <p class="vjs-no-js">
@@ -34,6 +105,72 @@
     >
     </p>
 </video>
+<div class="overlay" id="overlay"></div>
+<div class="topbar" id="title">
+    <div class="title">
+        <img src="https://www.themoviedb.org/t/p/w1280<%- poster %>" alt="poster">
+        <h1><%- title %></h1>
+    </div>
+    <div class="endText">
+        <p>Ends at:</p>
+        <span id="end"></span>
+    </div>
+</div>
 
-<script src="https://vjs.zencdn.net/8.9.0/video.min.js"></script>
+
+<!-- <script src="https://vjs.zencdn.net/8.9.0/video.min.js"></script> -->
+<script src="https://cdn.jsdelivr.net/gh/BMSVieira/moovie.js@latest/js/moovie.min.js"></script>
+<script>
+var player = new Moovie({
+  selector: "#video",
+  dimensions: {
+    width: "100%"
+  },
+  config: {
+    storage: {
+      captionOffset: true,
+      playrateSpeed: false,
+      captionSize: true
+    },
+    controls: {
+      playtime: true,
+      volume: true,
+      subtitles: true,
+      fullscreen: true,
+      submenuCaptions : true,
+      submenuOffset : false,
+      allowLocalSubtitles : true
+    }
+  },
+  icons: {
+        path: "https://raw.githubusercontent.com/BMSVieira/moovie.js/main/icons/"
+  }
+});
+
+var duration = 0;
+
+player.video.addEventListener('pause', () => {
+    document.getElementById('title').style.opacity = 1;
+    document.getElementById('overlay').style.opacity = 1;
+})
+
+player.video.addEventListener('play', () => {
+    document.getElementById('title').style.opacity = 0;
+    document.getElementById('overlay').style.opacity = 0;
+})
+
+player.video.addEventListener('loadedmetadata', () => {
+    duration = player.video.duration * 1000
+    document.getElementById('end').innerHTML = new Date(Date.now() + duration).toLocaleString('en-US', {
+        hour12: false,
+    }).substr(11, 5)
+})
+
+player.video.addEventListener('timeupdate', () => {
+    document.getElementById('end').innerHTML = new Date(Date.now() + (duration - player.video.currentTime * 1000)).toLocaleString('en-US', {
+        hour12: false,
+    }).substr(11, 5)
+})
+
+</script>
 </body>
