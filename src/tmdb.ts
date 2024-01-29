@@ -140,7 +140,8 @@ export async function getWatchlist(): Promise<{movies: MovieDB.Objects.Movie[], 
             sort_by: 'created_at.asc',
         }
     }).catch((err) => {
-        throw new Error(err);
+        console.log(err);
+        
     })
 
     const shows = api.account.getTVShowWatchlist({
@@ -152,11 +153,11 @@ export async function getWatchlist(): Promise<{movies: MovieDB.Objects.Movie[], 
             sort_by: 'created_at.asc',
         }
     }).catch((err) => {
-        throw new Error(err);
+        console.log(err);
     })
 
     return {
-        movies: (await movies).data.results,
-        shows: (await shows).data.results
+        movies: (await movies)?.data.results || [],
+        shows: (await shows)?.data.results || []
     }
 }
