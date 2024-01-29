@@ -35,7 +35,8 @@ router.get('/login', async (_req, res) => {
         if(!token) {
             throw new Error('Failed to get token')
         }
-        res.redirect(`https://www.themoviedb.org/authenticate/${token}?redirect_to=http://localhost:3000/settings/authorize`);
+        const base = process.env.BASE_URL
+        res.redirect(`https://www.themoviedb.org/authenticate/${token}?redirect_to=${base}/settings/authorize`);
     } catch (error) {
         res.render('error', {error})
     }

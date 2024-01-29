@@ -35,6 +35,7 @@ services:
       - PORT=3000
       - REDIS_URL=redis://cache
       - TMDB_KEY=your_key
+      - BASE_URL=http://localhost:3000
     command:
       sh -c 'npm i && npm run dev'
 
