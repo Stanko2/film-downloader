@@ -139,6 +139,8 @@ export async function getWatchlist(): Promise<{movies: MovieDB.Objects.Movie[], 
             session_id: await db.getTMDBSessionId(),
             sort_by: 'created_at.asc',
         }
+    }).catch((err) => {
+        throw new Error(err);
     })
 
     const shows = api.account.getTVShowWatchlist({
@@ -149,6 +151,8 @@ export async function getWatchlist(): Promise<{movies: MovieDB.Objects.Movie[], 
             session_id: await db.getTMDBSessionId(),
             sort_by: 'created_at.asc',
         }
+    }).catch((err) => {
+        throw new Error(err);
     })
 
     return {
