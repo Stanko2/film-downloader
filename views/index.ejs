@@ -64,7 +64,7 @@
     <%- complete.length %> Completed downloads
 </h3>
 <hr>
-<ul class="list-group collapse show" id="complete">
+<ul class="list-group collapse" id="complete">
     <% for(const download of complete) { %>
         <li class="list-group-item list-group-item-success">
             <div class="row">
@@ -73,13 +73,43 @@
         </li>
     <% } %>
 </ul>
-<hr>
-<div class="d-flex justify-content-around">
-    <form action="/series/reload" method="get">
-        <button class="btn btn-primary" type="submit">Reload TV show library cache</button>
-    </form>
-    <form action="/films/reload" method="get">
-        <button class="btn btn-primary" type="submit">Reload movie library cache</button>
-    </form>
-</div>
+
+<% if (watchlist == undefined) { %>
+    <div class="alert alert-warning" role="alert">
+        <h4 class="alert-heading">No watchlist</h4>
+        <p>No TMDB account ID. You can add it in <a href="/settings">settings</a></p>
+<% } else { %>
+    <div>
+        <h3>Movie watchlist</h3>
+
+        <div class="d-flex flex-wrap justify-content-center">
+            <% watchlist.movies.forEach(function(film, i){ %>
+                <%- include('./components/film-card', {
+                    poster: film.poster_path,
+                    name: film.name,
+                    link: `/films/download/${film.id}`
+                }) %>
+            <% }) %>
+        </div>
+        <% if (watchlist.movies.length == 0) { %>
+            <p>No movies in watchlist</p>
+        <% } %>
+
+        <h3>TV show watchlist</h3>
+
+        <div class="d-flex flex-wrap justify-content-center">
+            <% watchlist.shows.forEach(function(film, i){ %>
+                <%- include('./components/film-card', {
+                    poster: film.poster_path,
+                    name: film.name,
+                    link: `/series/download/${film.id}`
+                }) %>
+            <% }) %>
+        </div>
+        <% if (watchlist.shows.length == 0) { %>
+            <p>No TV shows in watchlist</p>
+        <% } %>
+    </div>
+<% } %>
+
 <%- include('footer') -%>

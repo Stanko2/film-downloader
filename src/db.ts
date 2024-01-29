@@ -15,6 +15,14 @@ class Database {
         await this.client.set(type + 'saveLocation', path)
     }
 
+    async getTMDBSessionId(): Promise<string> {
+        return await this.client.get('TMDB_sessionId') || ''
+    }
+
+    async setTMDBSessionId(val: string): Promise<void> {
+        await this.client.set('TMDB_sessionId', val)
+    }
+
     client: RedisClientType;
     constructor () {
         this.client = createClient({url: process.env.REDIS_URL })

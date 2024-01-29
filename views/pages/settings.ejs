@@ -8,7 +8,24 @@
         <input class="form-control" type="text" name="seriesPath" id="seriesPath" value="<%= seriesPath %>" >
         <label class="form-label" for="downloadCron">Download Interval</label>
         <input class="form-control" type="text" name="downloadCron" id="downloadCron" value="<%= downloadCron %>">
-        <button type="submit" class="btn block btn-primary">Save</button>
+        <div class="d-flex justify-content-between mb-2 mt-2 align-items-center">
+            <label class="form-label" for="accountId">TMDB account </label>
+            <% if (!session) { %>
+                <a href="/settings/login" class="btn btn-secondary" id="accountId">Login</a>
+            <% } else { %>
+                <p class="text-success">Logged In</p>
+            <% } %>
+        </div>
+        <button type="submit" class="btn btn-primary form-control">Save</button>
     </form>
+    <hr>
+    <div class="d-flex justify-content-around">
+        <form action="/series/reload" method="get">
+            <button class="btn btn-primary" type="submit">Reload TV show library cache</button>
+        </form>
+        <form action="/films/reload" method="get">
+            <button class="btn btn-primary" type="submit">Reload movie library cache</button>
+        </form>
+    </div>
     
 <%- include('../footer') -%>

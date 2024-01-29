@@ -2,7 +2,7 @@ import TMDB from 'node-themoviedb'
 import db from './db';
 import MovieDB from 'node-themoviedb';
 
-let api: TMDB | undefined;
+export let api: TMDB | undefined;
 
 export function init() {
     const key = process.env.TMDB_KEY
@@ -124,4 +124,35 @@ export async function getMovieImages(movie_id: string) {
             movie_id
         }
     })
+}
+
+export async function getWatchlist(): Promise<{movies: MovieDB.Objects.Movie[], shows: MovieDB.Objects.TVShow[]}> {
+    if(!api){
+        throw new Error('TMDB API not initialized')
+    }
+
+    const movies = api.account.getMovieWatchlist({
+        pathParameters: {
+            account_id: 0
+        },
+        query: {
+            session_id: await db.getTMDBSessionId(),
+            sort_by: 'created_at.asc',
+        }
+    })
+
+    const shows = api.account.getTVShowWatchlist({
+        pathParameters: {
+            account_id: 0
+        },
+        query: {
+            session_id: await db.getTMDBSessionId(),
+            sort_by: 'created_at.asc',
+        }
+    })
+
+    return {
+        movies: (await movies).data.results,
+        shows: (await shows).data.results
+    }
 }

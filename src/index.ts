@@ -5,6 +5,7 @@ import films from './films'
 import series from './series'
 import db from './db'
 import { downloaders, Init } from './downloadCommand'
+import { getWatchlist } from './tmdb'
 
 const app = express()
 
@@ -28,10 +29,12 @@ app.get('/', async (_req, res) => {
     error: 'danger',
     inProgress: 'secondary'
   }
+  const watchlist = await getWatchlist().catch(()=> undefined)
   return res.render('index', {
     Downloads: (await db.getAllDownloads()).filter(d => d.state != 'complete'),
     complete: (await db.getAllDownloads()).filter(d => d.state == 'complete'),
-    stateMap
+    stateMap,
+    watchlist
   })
 })
 

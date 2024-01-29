@@ -1,0 +1,9 @@
+<div class="card m-1 bs-image shadow-3-strong" style="width: 220px; height: 330px;
+      background-image: url(<% if (poster != undefined) { %>
+          'https://www.themoviedb.org/t/p/w220_and_h330_face<%= poster %>'<% } else { %>
+          'https://via.placeholder.com/220x330.png?text=<%= name.replaceAll(' ', '+') %>'<% } %>
+      );">
+    <div class="card-body movie-text">
+        <a href="<%- link %>"><%= name %></a>
+    </div>
+</div>

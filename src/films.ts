@@ -186,6 +186,10 @@ router.get('/download/:id', async (req,res) => {
   } else {
     const playlist = (await axios.get(stream.playlist).catch(err => console.log(err))
     )?.data
+    if (!playlist) {
+      res.render('error', {error: 'No stream found'})
+      return
+    }
     qualities = parseHlsQuality(playlist)
   }
 

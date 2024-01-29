@@ -1,46 +1,21 @@
 <%- include('../../header') -%>
-  <h1>Movies library</h1>
+  <div class="d-flex justify-content-between align-items-center mt-2">
+    <h1>Movies library</h1>
+    <a class="btn btn-primary" href="/films/add">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus" viewBox="0 0 16 16">
+        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+      </svg>
+    </a>
+  </div>
+
   <div class="d-flex flex-wrap">
     <% films.forEach(function(film, i){ %>
-      <div class="card m-1 bs-image shadow-3-strong" style="width: 220px; height: 330px;
-      background-image: url(<% if (film.poster != undefined) { %>
-          'https://www.themoviedb.org/t/p/w220_and_h330_face<%= film.poster %>'<% } else { %>
-          'https://via.placeholder.com/220x330.png?text=<%= film.name.replaceAll(' ', '+') %>'<% } %>
-      );">
-        <div class="card-body movie-text">
-          <a href="/films/<%= film.id %>/streams"><%= film.name %></a>
-        </div>
-      </div>
+        <%- include('../../components/film-card', {
+          poster: film.poster,
+          name: film.name,
+          link: `/films/${film.id}/streams`
+        }) %>
     <% }) %>
   </div>
   
-  <hr class="mb-4 mt-4">
-  <div class="d-flex justify-content-center">
-    <a class="btn btn-primary" href="/films/add">Add new Movie</a>
-  </div>
-  <style>
-    .movie-text {
-      position: relative;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: radial-gradient(circle, rgba(0,0,0,1) 0%, rgba(0,0,0,0.7) 50%, rgba(0,0,0,0) 100%);
-      color: white;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      opacity: 0;
-      transition: opacity .3s ease;
-    }
-    .movie-text:hover {
-      opacity: 1;
-    }
-
-    .movie-text a {
-      color: white;
-      text-decoration: none;
-      font-weight: 700;
-    }
-  </style>
 <%- include('../../footer') -%>
