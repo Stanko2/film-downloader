@@ -187,11 +187,15 @@ export default class HlsDownloader extends Downloader  {
     async downloadSegment(url: string, segName: string, dest: string) {
         
         let retry = 0
-        await fs.writeFile(dest, Buffer.from(''))
+        console.log(url + '/' + segName, dest);
+        
         while (retry < 10) {
             try {
                 const res = await axios.get(url + '/' + segName, {responseType: 'arraybuffer', timeout: 4000})
-                const buf = res?.data
+                console.log(`Downloaded ${segName}`, res.status);
+                
+                const buf = res?.data                
+
                 if(buf){
                     await fs.writeFile(dest, Buffer.from(buf))
                     return
@@ -202,6 +206,6 @@ export default class HlsDownloader extends Downloader  {
                 continue
             }
         }
-
+        throw new Error('Failed to download ' + segName)
     }
 }

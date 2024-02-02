@@ -216,10 +216,18 @@ router.post('/download/:id', (req, res) => {
         throw new Error(`no media found for quality ${req.body.quality}`)
       }
 
-      new DownloadCommand(src, await db.getSaveLocation('series') + '/' + dirName, fileName, ()=> {
+      const cmd = new DownloadCommand(src, await db.getSaveLocation('series') + '/' + dirName, fileName, ()=> {
         return
       }, captions, link.src.stream.type)
       
+      cmd.scrapeArgs = {
+        type: 'show',
+        data,
+        quality: req.body.quality,
+        source: req.body.source,
+        season: link.season,
+        episode: link.episode
+      }
     }
   })
 })

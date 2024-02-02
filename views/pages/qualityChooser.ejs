@@ -1,9 +1,9 @@
 <%- include('../header') %>
-<h1>Download <%- title %></h1>
+<h1>Download "<%- title %>"</h1>
 <hr>
 <div class="row">
     <div class="col-4">
-        <img src="https://www.themoviedb.org/t/p/w220_and_h330_face<%= banner %>" class="w-100">
+        <img src="https://www.themoviedb.org/t/p/w220_and_h330_face<%= banner %>" class="w-100 img-fluid img-thumbnail">
     </div>
     <div class="col-8">
         <form action="<%= postUrl  %>" method="post" class="form">
@@ -12,7 +12,8 @@
             <h3>Quality</h3>
             <% Object.entries(qualities).forEach(quality => { %>
                 <div class="form-check">
-                    <label class="form-check-label" for="<%= quality[0] %>"><%= quality[0] %>p</label>
+                    <label class="form-check-label" for="<%= quality[0] %>"><%= quality[0] %><% if (quality[0] != '4k') { %>p<% } %>
+                        </label>
                     <% if (pageType == 'movie') { %>
                         <input class="form-check-input" type="radio" id="<%= quality[0] %>" name="url" value="<%- quality[1] %>"/>
                     <% } else if (pageType == 'series') { %>
@@ -23,24 +24,35 @@
             <% if (Object.keys(qualities).length == 0) { %>
                 <p class="text-danger">No media available, try different source</p>
             <% } %>
-            <h3>Captions</h3>
-            <div class="d-flex flex-wrap">
-                <% captions?.forEach(caption => { %>
-                    <div class="form-check m-2">
-                        <label class="form-check-label" for="caption<%= caption.text %>"><%= caption.text %></label>
-                        <input class="form-check-input" type="checkbox" id="caption<%= caption.text %>" name="caption" value="<%- caption.text %>$$$<%- caption.value %>"/>
-                    </div>
-                <% }) %>
-            </div>
+            <% if (captions?.length || 0 > 0) { %>
+                <h3>Captions</h3>
+                <div class="d-flex flex-wrap">
+                    <% captions?.forEach(caption => { %>
+                        <div class="form-check m-2">
+                            <label class="form-check-label" for="caption<%= caption.text %>"><%= caption.text %></label>
+                            <input class="form-check-input" type="checkbox" id="caption<%= caption.text %>" name="caption" value="<%- caption.text %>$$$<%- caption.value %>"/>
+                        </div>
+                    <% }) %>
+                </div>
+            <% } %>
             <hr>
             <% if (pageType == 'series') { %>
                 <% seasons?.forEach((season, i) => { %>
-                    <h4>Season #<%- i + 1 %></h4>
+                    <div class="row">
+                        <div class="col-10">
+                            <h4>Season #<%- i + 1 %></h4>
+                        </div>
+                        <div class="col-2 form-check">
+                            <label for="selectAll<%- i + 1 %>" class="form-check-label">Select all</label>
+                            <input type="checkbox" id="selectAll<%- i + 1 %>" class="form-check-input select-all" checked />
+                        </div>
+                    </div>
+                    <hr class="m-0 mb-1">
                     <div class="d-flex mb-4">
                         <% for( let episode = 1; episode <= season; episode++ ) { %>
                             <div class="form-check form-inline">
-                                <input type="checkbox" name="season-<%- i + 1 %>" id="episode<%- i %>#<%- episode %>" value="<%- episode %>" checked />
-                                <label for="episode<%- i %>#<%- episode %>">Episode #<%- episode %></label>
+                                <input type="checkbox" name="season-<%- i + 1 %>" id="episode<%- i %>#<%- episode %>" value="<%- episode %>" checked class="form-check-input" />
+                                <label class="form-check-label" for="episode<%- i %>#<%- episode %>">Episode #<%- episode %></label>
                             </div>
                         <% } %>
                     </div>
@@ -59,4 +71,14 @@
         </form>
     </div>
 </div>
+<script>
+document.querySelectorAll('.select-all').forEach(checkbox => {
+    checkbox.addEventListener('change', function() {
+        const season = this.id.replace('selectAll', '');
+        document.querySelectorAll(`input[name="season-${season}"]`).forEach(episode => {
+            episode.checked = this.checked;
+        });
+    });
+});
+</script>
 <%- include('../footer') %>

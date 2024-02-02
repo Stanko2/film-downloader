@@ -188,7 +188,13 @@ router.post('/download/:id', async (req, res) => {
   }
   
   res.redirect('/films')
-  new DownloadCommand(url, path.join(location, dirName), dirName, ()=> {return}, captions, streamType);
+  const cmd = new DownloadCommand(url, path.join(location, dirName), dirName, ()=> {return}, captions, streamType);
+  cmd.scrapeArgs = {
+    type: 'movie',
+    data,
+    quality: req.body.quality,
+    source: req.body.source
+  }
 })
 
 
