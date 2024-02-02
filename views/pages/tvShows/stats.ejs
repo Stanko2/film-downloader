@@ -44,13 +44,13 @@
                                     <hr>
                                     <div class="d-flex justify-content-between">
                                         <% if (!stream.error) { %>                     
-                                            <p>Resolution: <span class="badge bg-primary"> <%- stream.streamData.resolution.width %>&times;<%- stream.streamData.resolution.height %></span></p>
-                                            <p>Size: <%- stream.streamData.metadata.size %></p>
-                                            <p>Bit rate: <%- stream.streamData.metadata.bit_rate %></p>
-                                            <p>Duration: <%- stream.streamData.metadata.duration %></p>
+                                            <p>Resolution: <span class="badge bg-primary"> <%- stream.streamData?.resolution?.width %>&times;<%- stream.streamData?.resolution?.height %></span></p>
+                                            <p>Size: <%- stream.streamData?.metadata?.size %></p>
+                                            <p>Bit rate: <%- stream.streamData?.metadata?.bit_rate %></p>
+                                            <p>Duration: <%- stream.streamData?.metadata?.duration %></p>
                                         <% } else { %>
                                             <div class="alert alert-danger">
-                                                <p><%- stream.streamData.error %></p>
+                                                <p><%- stream.streamData?.error %></p>
                                             </div>
                                         <% } %>
                                     </div>
