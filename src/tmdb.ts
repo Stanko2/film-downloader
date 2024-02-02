@@ -23,13 +23,15 @@ export async function searchMovie(query: string, year: number | undefined) {
             query,
             year
         }
+    }).catch((err) => {
+        throw new Error("Error searching movies: " + err.message);  
     })
 
     return res.data.results
     
 }
 
-export async function getMovieFromID(id: string): Promise<MovieDB.Responses.Movie.GetDetails> {
+export async function getMovieFromID(id: string): Promise<MovieDB.Responses.Movie.GetDetails> {    
     if(!api){
         throw new Error('TMDB API not initialized')
     }
@@ -43,6 +45,8 @@ export async function getMovieFromID(id: string): Promise<MovieDB.Responses.Movi
         pathParameters: {
             movie_id: id
         }
+    }).catch((err) => {
+        throw new Error("Error getting movie details: " + err.message);  
     })
 
     db.client.set('tmdbDataMovies:'+id, JSON.stringify(res.data))
@@ -63,9 +67,11 @@ export async function getTvShowFromID(id: string): Promise<MovieDB.Responses.TV.
         pathParameters: {
             tv_id: id
         }
+    }).catch((err) => {
+        throw new Error("Error getting tv show details: " + err.message);  
     })
     
-    db.client.set('tmdbDataTV:'+id, JSON.stringify(res.data))
+    db.client.set('tmdbDataTV:'+id, JSON.stringify(res?.data))
     return res.data
 }
 
@@ -76,12 +82,12 @@ export async function searchSeries(query: string) {
         throw new Error('TMDB API not initialized')
     }
 
-    
-
     const res = await api.search.TVShows({
         query: {
             query,
         }
+    }).catch((err) => {
+        throw new Error("Error searching series: " + err.message);  
     })
 
     return res.data.results
@@ -103,6 +109,8 @@ export async function getSeasonDetails(id: string, season: number, episode: numb
             season_number: season,
             episode_number: episode
         }
+    }).catch((err) => {
+        throw new Error("Error getting episode details: " + err.message);  
     })
 
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment

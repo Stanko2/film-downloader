@@ -1,10 +1,10 @@
 import fs from 'fs'
 import db from "./db";
 import { extname, join } from "path"
-import fetch from 'node-fetch'
 import { Downloader } from "./downloaders";
 import FileDownloader from "./downloaders/file-download";
 import HlsDownloader from "./downloaders/hls-download";
+import axios from 'axios';
 
 type DownloadType = 'hls' | 'file'
 
@@ -52,16 +52,20 @@ export default class DownloadCommand {
     }
 
     init() {
-        const filepath = join(this.dest, this.name + extname(this.videoURL.split('?')[0]))
-        if(this.type == 'hls'){
-            this.downloader = new HlsDownloader(this.videoURL, filepath)
-        } else {
-            this.downloader = new FileDownloader(this.videoURL, filepath)
+        try {
+            const filepath = join(this.dest, this.name + extname(this.videoURL.split('?')[0]))
+            if(this.type == 'hls'){
+                this.downloader = new HlsDownloader(this.videoURL, filepath)
+            } else {
+                this.downloader = new FileDownloader(this.videoURL, filepath)
+            }
+            this.downloader.init().then((success) => {
+                this.cb(success)
+            })
+            downloaders[this.id] = this
+        } catch (e) {
+            this.cb(false)
         }
-        this.downloader.init().then((success) => {
-            this.cb(success)
-        })
-        downloaders[this.id] = this
     }
 
     async startDownload(): Promise<boolean> {
@@ -87,8 +91,8 @@ export default class DownloadCommand {
 
     async downloadCaptions(captionURLs: Record<string, string>) {
         for (const caption of Object.keys(captionURLs)) {
-            const res = await fetch(captionURLs[caption])
-            fs.writeFileSync(join(this.dest, this.name + '-' + caption + extname(captionURLs[caption])), await res.text(), {mode: 0o777})
+            const res = await axios.get(captionURLs[caption], {responseType: 'text'})
+            fs.writeFileSync(join(this.dest, this.name + '-' + caption + extname(captionURLs[caption])), res.data, {mode: 0o777})
         }
     }
 

@@ -1,7 +1,7 @@
-import { Qualities, makeProviders, makeStandardFetcher,  } from "@movie-web/providers";
+import { Qualities } from "@movie-web/providers";
 import { ffprobe } from "fluent-ffmpeg";
-import fetch from "node-fetch";
 import db from "./db";
+
 
 const videoExtensions = ['m4v', 'avi','mpg','mp4', 'webm', 'mov', 'mkv']
 
@@ -99,15 +99,6 @@ export async function getStreamMetadata(file: string, name: string) {
     db.client.set('streamData:'+file, JSON.stringify(data))
     return data
   })
-}
-
-export function listSources() {
-  const fetcher = makeStandardFetcher(fetch);
-  const providers = makeProviders({
-    fetcher,
-    target: "any"
-  });
-  return providers.listSources();  
 }
 
 export function parseFileName(name: string): [string, number | undefined] {

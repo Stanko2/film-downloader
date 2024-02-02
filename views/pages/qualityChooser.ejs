@@ -20,6 +20,9 @@
                     <% } %>
                 </div>
             <% }) %>
+            <% if (Object.keys(qualities).length == 0) { %>
+                <p class="text-danger">No media available, try different source</p>
+            <% } %>
             <h3>Captions</h3>
             <div class="d-flex flex-wrap">
                 <% captions?.forEach(caption => { %>

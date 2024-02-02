@@ -3,84 +3,19 @@ import fs from 'fs'
 import db from './db'
 import DownloadCommand from './downloadCommand'
 import path from 'path'
-import { IsVideo, parseHlsQuality, getStreamMetadata, listSources, parseFileName, parseSeasonEpisode } from './util'
+import { IsVideo, parseHlsQuality, getStreamMetadata, parseSeasonEpisode } from './util'
 import { getSeasonDetails, getTvShowFromID, init, searchSeries } from './tmdb'
-import { FileBasedStream, Qualities, RunOutput, makeProviders, makeStandardFetcher, targets } from '@movie-web/providers'
-import MovieDB from 'node-themoviedb'
-import fetch from 'node-fetch'
+import { FileBasedStream, Qualities } from '@movie-web/providers'
 import axios from 'axios'
+import { scrapeEpisode, getDownloadLinks, listSources } from './scraper'
+import { getAllShows, getEpisodeName, getShowDetails, getYear, reloadLibrary } from './library'
 
 const router = Router()
 
 init()
 
-
-// interface ShowScrapeData {
-//   src: RunOutput;
-//   season: number;
-//   episode: number;
-// }
-
-function getEpisodeName(season: number, episode: number) {
-  let ret = 'S'
-  if (season < 10)
-    ret+='0'
-  ret+=season.toString() + 'E'
-  if (episode < 10)
-    ret+='0'
-  ret+=episode.toString()
-  return ret
-}
-
-function getYear(release_date: string): number {
-  return new Date(release_date).getFullYear()
-}
-
-async function getAllShows() {
-  const location = await db.getSaveLocation('series') 
-  if(fs.existsSync(location)){
-    const films = fs.readdirSync(location).filter(x => fs.statSync(path.join(location, x)).isDirectory())
-    return films
-  }
-  else throw new Error('Film library non-existed or non specified')
-}
-
-async function getShowDetails(name: string) {
-  const [title] = parseFileName(name)
-  console.log(title)
-  let id = parseInt(await db.client.get('series:'+ name.replaceAll(' ', '-')) || 'NaN')
-  if(isNaN(id)) {
-    const data = await searchSeries(title)
-    if(data.length == 0) {
-      console.log('No data found for ' + name);
-      
-      return null
-    }
-    await db.client.set('series:'+ name.replaceAll(' ', '-'), data[0].id)
-    id = data[0].id
-  }
-  
-  return getTvShowFromID(id.toString())
-}
-
-
-async function reloadShowDatabase() {
-  const showLibrary: any[] = []
-  const shows = await getAllShows()
-  for (const [i, show] of shows.entries()) {
-    const details = await getShowDetails(show)
-    showLibrary.push({
-      name: show,
-      poster: details?.poster_path,
-      id: i
-    })
-  }
-
-  db.client.set('seriesLibrary', JSON.stringify(showLibrary))
-}
-
 router.get('/reload', async (_req, res) => {
-  await reloadShowDatabase().catch((err) => {
+  await reloadLibrary('series').catch((err) => {
     console.error(err);
     res.render('error', {error: err});
   })
@@ -88,11 +23,14 @@ router.get('/reload', async (_req, res) => {
 })
 
 router.get('/', async (_req, res)=>{
-  const data = JSON.parse(await db.client.get('seriesLibrary') || '[]')
+  const data = JSON.parse(await db.client.get('Library:series') || '[]')
   if(data.length == 0) {
-    await reloadShowDatabase().catch((err) => {
+    await reloadLibrary('series').catch((err) => {
       console.error(err);
       res.render('error', {error: err});
+    })
+    res.render('pages/tvShows/list', {
+      films: JSON.parse(await db.client.get('Library:series') || '[]')
     })
   }
   res.render('pages/tvShows/list', {
@@ -116,7 +54,6 @@ router.get('/:id/streams', async (req,res) => {
       }
     })
     const file = parseSeasonEpisode(stream)
-    console.log(file);
     
     if(!file || !details) {
       streams.push({
@@ -172,6 +109,22 @@ router.get('/add', (_req, res) => {
     res.render('pages/tvShows/add')
 })
 
+router.post('/add', async (req, res)=> {
+  try {
+    const name = req.body.showName + ' (' + req.body.year + ')'
+    const episodeName = name + ' ' + getEpisodeName(req.body.season, req.body.episode)
+    new DownloadCommand(req.body.showUrl, path.join(await db.getSaveLocation('series'), name), episodeName, (success)=> {
+      if(!success) {
+        res.render('error', {error: 'Failed to download'})
+      } else {
+        res.redirect('/series')
+      }
+    }, {}, 'file');
+  } catch (e) {
+    res.render('error', { error: e })
+  }
+})
+
 router.post('/add/search', async (req,res)=> {
   const query = req.body.SeriesName
   res.redirect('/series/add/searchResult?q=' + query);
@@ -193,7 +146,6 @@ router.get('/add/searchResult', async (req, res) => {
   
 router.get('/download/:id', async (req,res) => {
   const data = await getTvShowFromID(req.params.id)
-  // const providers = await getDownloadLinks(data)
   const metadata  = await scrapeEpisode(data, 1, 1, req.query.source as string);
   let qualities: Record<string, string> = {}
   if (metadata?.stream.type == 'file'){
@@ -254,7 +206,9 @@ router.post('/download/:id', (req, res) => {
       if(link.src.stream.type == 'file'){
         src = link.src.stream.qualities[req.body.quality as Qualities]?.url
       } else {
-        const manifest = await fetch(link.src.stream.playlist).then(res => res.text())
+        const manifest = await axios.get(link.src.stream.playlist, {
+          responseType: 'text'
+        }).then(res => res.data)
         src = parseHlsQuality(manifest)[req.body.quality as Qualities]
       }
 
@@ -269,47 +223,5 @@ router.post('/download/:id', (req, res) => {
     }
   })
 })
-
-async function* getDownloadLinks(showData: MovieDB.Responses.TV.GetDetails, source: string, downloadEpisode: (season: number, episode: number) => boolean) {
-  for (const season of showData.seasons) {
-    for (let i = 0; i < season.episode_count; i++) {
-      if(!downloadEpisode(season.season_number, i+1)) continue
-      const s = await scrapeEpisode(showData, season.season_number, i+1, source);
-      console.log(`scraped episode #${i + 1} of season ${season.season_number}`);
-      if(s)
-        yield {
-          src: s,
-          season: season.season_number,
-          episode: i+1
-      };
-    }
-  }
-}
-
-async function scrapeEpisode(data: MovieDB.Responses.TV.GetDetails, season: number, episode: number, source: string | undefined): Promise<RunOutput | null> {
-  const fetcher = makeStandardFetcher(fetch)
-  const providers = makeProviders({
-    fetcher,
-    target: targets.ANY
-  })
-
-  return providers.runAll({
-    media: {
-      type: 'show',
-          episode: {
-            number: episode,
-            tmdbId: data.id.toString()
-          },
-          season: {
-            number: season,
-            tmdbId: data.id.toString()
-          },
-          releaseYear: new Date(data.first_air_date).getFullYear(),
-          title: data.name,
-          tmdbId: data.id.toString(),
-    },
-    sourceOrder: source ? [source] : undefined
-  }).catch(() => null)
-}
 
 export default router

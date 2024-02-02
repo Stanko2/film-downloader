@@ -13,7 +13,7 @@
         <%- include('../../components/film-card', {
           poster: film.poster,
           name: film.name,
-          link: `/films/${film.id}/streams`
+          link: `/films/${film.id + 1}/streams`
         }) %>
     <% }) %>
   </div>

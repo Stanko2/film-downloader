@@ -1,13 +1,27 @@
 <%- include('../../header') %>
-<h1>Add new Film</h1>
+<h1 class="mt-3">Add new Film</h1>
 <hr>
-<form action="/films/add/search" method="post" class="form">
-    <label for="filmName">Film Name</label>
-    <input type="text" name="FilmName" placeholder="Enter name of the film ..." class="form-control" id="filmName">
-    <label for="releaseYear">Release Year</label>
-    <input type="number" name="releaseYear" class="form-control" id="releaseYear">
-    <label for="filmURL">Film URL</label>
+<form action="/films/add/search" method="post" class="form mb-3">
+    <div class="input-group mb-8">
+        <input type="text" name="FilmName" placeholder="Search ..." class="form-control">
+        <button type="submit" class="btn btn-outline-primary">Search</button>
+    </div>
+</form>
+<h2 class="mt-3">Add Manually</h2>
+<form class="form" method="post" action="/films/add">
+    
+    <div class="row">
+        <div class="col-8">
+            <label for="filmName">Name</label>
+            <input type="text" name="FilmName" placeholder="Enter name of the film ..." class="form-control col-8" id="filmName">
+        </div>
+        <div class="col-4">
+            <label for="releaseYear">Release Year</label>
+            <input type="number" name="releaseYear" class="form-control" id="releaseYear">
+        </div>
+    </div>
+    <label for="filmURL">Video file URL</label>
     <input type="text" name="FilmURL" placeholder="Enter download link" class="form-control" id="filmURL">
-    <button type="submit" class="btn btn-primary">Search</button>
+    <button type="submit" class="btn btn-secondary">Add</button>
 </form>
 <%- include('../../footer') %>  

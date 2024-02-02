@@ -48,7 +48,7 @@ export abstract class Downloader {
                 needRestart = true
             }, Downloader.ProgressTimeout);
         }
-        let interval: NodeJS.Timer | undefined
+        let interval: NodeJS.Timeout | undefined
         let success = false
         Downloader.filesProcessing.clear()
         while(!success) {

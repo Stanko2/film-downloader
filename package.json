@@ -4,18 +4,18 @@
   "description": "Helper for scheduling film or other large file downloads",
   "main": "./lib/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
     "lint": "tslint -c tslint.json src/**/*.ts",
-    "prepublish": "npm run build",
-    "dev": "tsx watch src/index.ts"
+    "dev": "tsx watch src/index.ts",
+    "start": "npm run build && node ./lib/index.js"
   },
   "author": {
     "name": "Stanko"
   },
   "license": "ISC",
   "dependencies": {
-    "@movie-web/providers": "^2.0.1",
+    "@movie-web/providers": "latest",
+    "@types/node": "^18.19.14",
     "axios": "^1.6.5",
     "body-parser": "^1.20.2",
     "Buffer": "^0.0.0",
@@ -23,9 +23,6 @@
     "express": "^4.18.2",
     "fluent-ffmpeg": "^2.1.2",
     "node-cron": "^3.0.2",
-    "node-downloader-helper": "^2.1.6",
-    "node-fetch": "^3.3.2",
-    "node-hls-downloader": "^2.2.0",
     "node-themoviedb": "^0.2.8",
     "redis": "^4.6.12",
     "tslint": "^6.1.3",
