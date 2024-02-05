@@ -22,7 +22,7 @@ router.get('/reload', async (_req, res) => {
   res.redirect('/')
 })
 
-router.get('/', async (_req, res)=>{
+router.get('/', async (req, res)=>{
   const data = JSON.parse(await db.client.get('Library:series') || '[]')
   if(data.length == 0) {
     await reloadLibrary('series').catch((err) => {
@@ -41,7 +41,7 @@ router.get('/', async (_req, res)=>{
 router.get('/:id/streams', async (req,res) => {
   const shows = await getAllShows()
   const location = await db.getSaveLocation('series')
-  const showName = shows[parseInt(req.params.id)] 
+  const showName = shows[parseInt(req.params.id - 1)]
   const streamNames = fs.readdirSync(path.join(location, showName)).filter(x=> IsVideo(x))
   const streams: any[] = []
   const details = await getShowDetails(showName) || null
@@ -81,7 +81,7 @@ router.get('/:id/streams', async (req,res) => {
 router.get('/:id/watch/:streamId/file', async (req,res) => {
   const shows = await getAllShows()
   try {
-    const showName = shows[parseInt(req.params.id)] 
+    const showName = shows[parseInt(req.params.id - 1)]
     const stream = fs.readdirSync(path.join(await db.getSaveLocation('series'), showName)).filter(x=> IsVideo(x))[parseInt(req.params.streamId)];
     res.sendFile(path.join(await db.getSaveLocation('series'), showName, stream))
   } catch (error) {
@@ -92,7 +92,7 @@ router.get('/:id/watch/:streamId/file', async (req,res) => {
 router.get('/:id/watch/:streamId', async (req,res) => {
   const shows = await getAllShows()
   try {
-    const showName = shows[parseInt(req.params.id)] 
+    const showName = shows[parseInt(req.params.id - 1)]
     const details = await getShowDetails(showName);
     res.render('videoplayer', {
       thumbnail: details?.backdrop_path,
@@ -111,7 +111,7 @@ router.get('/add', (_req, res) => {
 
 router.post('/add', async (req, res)=> {
   try {
-    const name = req.body.showName + ' (' + req.body.year + ')'
+    const name = req.body.SeriesName + ' (' + req.body.year + ')'
     const episodeName = name + ' ' + getEpisodeName(req.body.season, req.body.episode)
     new DownloadCommand(req.body.showUrl, path.join(await db.getSaveLocation('series'), name), episodeName, (success)=> {
       if(!success) {

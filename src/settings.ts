@@ -21,7 +21,7 @@ router.post('/update', async (req, res) => {
         await db.setSaveLocation('series', req.body.seriesPath)
         await db.setSaveLocation('films', req.body.filmsPath)
         await scheduler.updateCron(req.body.downloadCron)
-        await db.client.set('TMDB_accountId', req.body.accountId)
+        // await db.client.set('TMDB_accountId', req.body.accountId)
         res.redirect('/settings')
     }
     catch (e) {
