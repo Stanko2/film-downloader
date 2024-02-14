@@ -138,13 +138,17 @@ export async function getWatchlist(): Promise<{movies: MovieDB.Objects.Movie[], 
     if(!api){
         throw new Error('TMDB API not initialized')
     }
+    const session_id = await db.getTMDBSessionId()
+    if (!session_id) {
+        throw new Error('No session id')
+    }
 
     const movies = api.account.getMovieWatchlist({
         pathParameters: {
             account_id: 0
         },
         query: {
-            session_id: await db.getTMDBSessionId(),
+            session_id,
             sort_by: 'created_at.asc',
         }
     }).catch((err) => {
@@ -157,7 +161,7 @@ export async function getWatchlist(): Promise<{movies: MovieDB.Objects.Movie[], 
             account_id: 0
         },
         query: {
-            session_id: await db.getTMDBSessionId(),
+            session_id,
             sort_by: 'created_at.asc',
         }
     }).catch((err) => {

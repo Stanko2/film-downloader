@@ -3,7 +3,7 @@ import fs from 'fs'
 import db from './db'
 import DownloadCommand from './downloadCommand'
 import path from 'path'
-import { IsVideo, parseHlsQuality, getStreamMetadata, parseSeasonEpisode } from './util'
+import { IsVideo, parseHlsQuality, getStreamMetadata, parseSeasonEpisode, compareQualities } from './util'
 import { getSeasonDetails, getTvShowFromID, init, searchSeries } from './tmdb'
 import { FileBasedStream, Qualities } from '@movie-web/providers'
 import axios from 'axios'
@@ -205,11 +205,18 @@ router.post('/download/:id', (req, res) => {
       }
       if(link.src.stream.type == 'file'){
         src = link.src.stream.qualities[req.body.quality as Qualities]?.url
+        if(!src) {
+          src = link.src.stream.qualities[(Object.keys(link.src.stream.qualities) as Qualities[]).sort(compareQualities)[0]]?.url
+        }
       } else {
         const manifest = await axios.get(link.src.stream.playlist, {
           responseType: 'text'
         }).then(res => res.data)
-        src = parseHlsQuality(manifest)[req.body.quality as Qualities]
+        const parsed = parseHlsQuality(manifest)
+        src = parsed[req.body.quality as Qualities]  
+        if(!src) {
+          src = parsed[(Object.keys(parsed) as Qualities[]).sort(compareQualities)[0]]
+        }
       }
 
       if(!src) {

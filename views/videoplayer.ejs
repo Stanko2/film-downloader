@@ -1,11 +1,16 @@
 <head>
-    <!-- <link href="https://vjs.zencdn.net/8.9.0/video-js.css" rel="stylesheet" /> -->
-    <!-- <link href="https://unpkg.com/@videojs/themes@1/dist/fantasy/index.css" rel="stylesheet" /> -->
-    <link href="https://cdn.jsdelivr.net/gh/BMSVieira/moovie.js@latest/css/moovie.min.css" rel="stylesheet">
+    <link href="https://vjs.zencdn.net/8.9.0/video-js.css" rel="stylesheet" />
+    <link href="https://unpkg.com/@videojs/themes@1/dist/fantasy/index.css" rel="stylesheet" />
+    <!-- <link href="https://cdn.jsdelivr.net/gh/BMSVieira/moovie.js@latest/css/moovie.min.css" rel="stylesheet"> -->
     <style>
         .video-js {
             width: 100%;
             height: 100%;
+            max-height: 100vh;
+            position: absolute;
+            z-index: 0;
+            top: 0;
+            left: 0;
         }
         body {
             margin: 0;
@@ -82,95 +87,135 @@
             opacity: 0;
             transition: opacity .3s ease;
         }
+        .vjs-control-bar {
+            position: fixed;
+            z-index: 10;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+        }
+        .container {
+            position: relative;
+            height: 100vh;
+        }
+
     </style>
     <title><%- title %></title>
 </head>
   
 <body>
-<video
-    id="video"
-    class="video-js vjs-theme-fantasy"
-    controls
-    preload="auto"
-    <% if (thumbnail) { %>
-        poster="https://www.themoviedb.org/t/p/w1280<%- thumbnail %>"
-    <% } %>
->
-    <source src="<%- url %>" type="video/mp4" />
-    <p class="vjs-no-js">
-    To view this video please enable JavaScript, and consider upgrading to a
-    web browser that
-    <a href="https://videojs.com/html5-video-support/" target="_blank"
-        >supports HTML5 video</a
+<div class="container">
+    <video
+        id="video"
+        class="video-js vjs-theme-fantasy"
+        controls
+        preload="auto"
+        <% if (thumbnail) { %>
+            poster="https://www.themoviedb.org/t/p/w1280<%- thumbnail %>"
+        <% } %>
     >
-    </p>
-</video>
-<div class="overlay" id="overlay"></div>
-<div class="topbar" id="title">
-    <div class="title">
-        <img src="https://www.themoviedb.org/t/p/w1280<%- poster %>" alt="poster">
-        <h1><%- title %></h1>
-    </div>
-    <div class="endText">
-        <p>Ends at:</p>
-        <span id="end"></span>
+        <source src="<%- url %>" type="video/mp4" />
+        <p class="vjs-no-js">
+        To view this video please enable JavaScript, and consider upgrading to a
+        web browser that
+        <a href="https://videojs.com/html5-video-support/" target="_blank"
+            >supports HTML5 video</a
+        >
+        </p>
+    </video>
+    <div class="overlay" id="overlay"></div>
+    <div class="topbar" id="title">
+        <div class="title">
+            <img src="https://www.themoviedb.org/t/p/w1280<%- poster %>" alt="poster">
+            <h1><%- title %></h1>
+        </div>
+        <div class="endText">
+            <p>Ends at:</p>
+            <span id="end"></span>
+        </div>
     </div>
 </div>
 
 
-<!-- <script src="https://vjs.zencdn.net/8.9.0/video.min.js"></script> -->
-<script src="https://cdn.jsdelivr.net/gh/BMSVieira/moovie.js@latest/js/moovie.min.js"></script>
+<script src="https://vjs.zencdn.net/8.9.0/video.min.js"></script>
+<!-- <script src="https://cdn.jsdelivr.net/gh/BMSVieira/moovie.js@latest/js/moovie.min.js"></script> -->
 <script>
-var player = new Moovie({
-  selector: "#video",
-  dimensions: {
-    width: "100%"
-  },
-  config: {
-    storage: {
-      captionOffset: true,
-      playrateSpeed: false,
-      captionSize: true
+// var player = new Moovie({
+//   selector: "#video",
+//   dimensions: {
+//     width: "100%"
+//   },
+//   config: {
+//     storage: {
+//       captionOffset: true,
+//       playrateSpeed: false,
+//       captionSize: true
+//     },
+//     controls: {
+//       playtime: true,
+//       volume: true,
+//       subtitles: true,
+//       fullscreen: true,
+//       submenuCaptions : true,
+//       submenuOffset : false,
+//       allowLocalSubtitles : true
+//     }
+//   },
+//   icons: {
+//         path: "https://raw.githubusercontent.com/BMSVieira/moovie.js/main/icons/"
+//   }
+// });
+
+var player = videojs('video', {
+    controls: true,
+    preload: 'auto',
+    playbackRates: [1, 1.5, 2],
+    controlBar: {
+        volumePanel: {
+            inline: false
+        }
     },
-    controls: {
-      playtime: true,
-      volume: true,
-      subtitles: true,
-      fullscreen: true,
-      submenuCaptions : true,
-      submenuOffset : false,
-      allowLocalSubtitles : true
+    fullscreen: {
+        options: {
+            navigationUI: 'show'
+        }
     }
-  },
-  icons: {
-        path: "https://raw.githubusercontent.com/BMSVieira/moovie.js/main/icons/"
-  }
 });
 
 var duration = 0;
 
-player.video.addEventListener('pause', () => {
+player.on('pause', () => {
     document.getElementById('title').style.opacity = 1;
     document.getElementById('overlay').style.opacity = 1;
 })
 
-player.video.addEventListener('play', () => {
+player.on('play', () => {
     document.getElementById('title').style.opacity = 0;
     document.getElementById('overlay').style.opacity = 0;
 })
 
-player.video.addEventListener('loadedmetadata', () => {
-    duration = player.video.duration * 1000
+player.on('loadedmetadata', () => {
+    duration = player.duration() * 1000
     document.getElementById('end').innerHTML = new Date(Date.now() + duration).toLocaleString('en-US', {
         hour12: false,
     }).substr(11, 5)
 })
 
-player.video.addEventListener('timeupdate', () => {
-    document.getElementById('end').innerHTML = new Date(Date.now() + (duration - player.video.currentTime * 1000)).toLocaleString('en-US', {
+player.on('timeupdate', () => {
+    document.getElementById('end').innerHTML = new Date(Date.now() + (duration - player.currentTime() * 1000)).toLocaleString('en-US', {
         hour12: false,
     }).substr(11, 5)
 })
+
+player.on('fullscreenchange', () => {
+    const fullscreen = player.isFullscreen()
+    if (fullscreen){
+        document.body.requestFullscreen()
+    } else {
+        document.exitFullscreen()
+    }
+
+});
 
 </script>
 </body>
