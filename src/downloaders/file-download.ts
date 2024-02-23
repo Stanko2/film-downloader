@@ -26,6 +26,11 @@ export default class FileDownloader extends Downloader {
     override async startDownload(progressCallback: (progress: DownloadProgress) => void): Promise<void> {
         // eslint-disable-next-line @typescript-eslint/no-this-alias
         const that = this
+        if(fs.existsSync(this.filename)) {
+            this.downloaded = fs.statSync(this.filename).size
+        } else {
+            this.downloaded = 0
+        }
         const res = await axios.get(this.url, {
             responseType: 'stream',
             headers: {
@@ -37,13 +42,13 @@ export default class FileDownloader extends Downloader {
                 progressCallback({
                     downloaded: that.downloaded + progressEvent.loaded,
                     total: that.size,
-                    percent: (progressEvent.loaded / (progressEvent.total ?? this.size) * 100)
+                    percent: (progressEvent.loaded / (progressEvent.total ?? that.size) * 100)
                 })
             },
         }).catch((err) => {
             throw new Error(err);
         })
-        
+
         this.downloadStream = fs.createWriteStream(this.filename, {mode: 0o777, flags: 'a'})
         res.data.pipe(this.downloadStream)
         return new Promise<void>((resolve, reject) => {
