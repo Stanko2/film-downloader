@@ -1,72 +1,111 @@
 <%- include('../header') %>
-<h1>Download "<%- title %>"</h1>
+<h1>Import "<%- title %>"</h1>
 <hr>
 <div class="row">
     <div class="col-4">
         <img src="https://www.themoviedb.org/t/p/w220_and_h330_face<%= banner %>" class="w-100 img-fluid img-thumbnail">
     </div>
     <div class="col-8">
-        <form action="<%= postUrl  %>" method="post" class="form">
-            <input type="hidden" name="type" value="<%- type %>">
-            <input type="hidden" name="source" value="<%- source %>">
-            <h3>Quality</h3>
-            <% Object.entries(qualities).forEach(quality => { %>
-                <div class="form-check">
-                    <label class="form-check-label" for="<%= quality[0] %>"><%= quality[0] %><% if (quality[0] != '4k') { %>p<% } %>
-                        </label>
-                    <% if (pageType == 'movie') { %>
-                        <input class="form-check-input" type="radio" id="<%= quality[0] %>" name="url" value="<%- quality[1] %>"/>
-                    <% } else if (pageType == 'series') { %>
-                        <input class="form-check-input" type="radio" id="<%= quality[0] %>" name="quality" value="<%- quality[0] %>"/>
-                    <% } %>
-                </div>
-            <% }) %>
-            <% if (Object.keys(qualities).length == 0) { %>
-                <p class="text-danger">No media available, try different source</p>
-            <% } %>
-            <% if (captions?.length || 0 > 0) { %>
-                <h3>Captions</h3>
-                <div class="d-flex flex-wrap">
-                    <% captions?.forEach(caption => { %>
-                        <div class="form-check m-2">
-                            <label class="form-check-label" for="caption<%= caption.text %>"><%= caption.text %></label>
-                            <input class="form-check-input" type="checkbox" id="caption<%= caption.text %>" name="caption" value="<%- caption.text %>$$$<%- caption.value %>"/>
-                        </div>
-                    <% }) %>
-                </div>
-            <% } %>
-            <hr>
-            <% if (pageType == 'series') { %>
-                <% seasons?.forEach((season, i) => { %>
-                    <div class="row">
-                        <div class="col-10">
-                            <h4>Season #<%- i + 1 %></h4>
-                        </div>
-                        <div class="col-2 form-check">
-                            <label for="selectAll<%- i + 1 %>" class="form-check-label">Select all</label>
-                            <input type="checkbox" id="selectAll<%- i + 1 %>" class="form-check-input select-all" checked />
-                        </div>
-                    </div>
-                    <hr class="m-0 mb-1">
-                    <div class="d-flex mb-4">
-                        <% for( let episode = 1; episode <= season; episode++ ) { %>
-                            <div class="form-check form-inline">
-                                <input type="checkbox" name="season-<%- i + 1 %>" id="episode<%- i %>#<%- episode %>" value="<%- episode %>" checked class="form-check-input" />
-                                <label class="form-check-label" for="episode<%- i %>#<%- episode %>">Episode #<%- episode %></label>
-                            </div>
+        <h2>Scrape for files</h2>
+        <% if (postUrl != undefined) { %>
+            <form action="<%= postUrl  %>" method="post" class="form">
+                <input type="hidden" name="type" value="<%- type %>">
+                <input type="hidden" name="source" value="<%- source %>">
+                <h3>Quality</h3>
+                <% Object.entries(qualities).forEach(quality => { %>
+                    <div class="form-check">
+                        <label class="form-check-label" for="<%= quality[0] %>"><%= quality[0] %><% if (quality[0] != '4k') { %>p<% } %>
+                            </label>
+                        <% if (pageType == 'films') { %>
+                            <input class="form-check-input" type="radio" id="<%= quality[0] %>" name="url" value="<%- quality[1] %>"/>
+                        <% } else if (pageType == 'series') { %>
+                            <input class="form-check-input" type="radio" id="<%= quality[0] %>" name="quality" value="<%- quality[0] %>"/>
                         <% } %>
                     </div>
                 <% }) %>
+                <% if (Object.keys(qualities).length == 0) { %>
+                    <p class="text-danger">No media available, try different source</p>
+                <% } %>
+                <% if (captions?.length || 0 > 0) { %>
+                    <h3>Captions</h3>
+                    <div class="d-flex flex-wrap">
+                        <% captions?.forEach(caption => { %>
+                            <div class="form-check m-2">
+                                <label class="form-check-label" for="caption<%= caption.text %>"><%= caption.text %></label>
+                                <input class="form-check-input" type="checkbox" id="caption<%= caption.text %>" name="caption" value="<%- caption.text %>$$$<%- caption.value %>"/>
+                            </div>
+                        <% }) %>
+                    </div>
+                <% } %>
                 <hr>
-            <% } %>
-            <p class="text-muted">Source: <%- source %></p>
-            <div class="d-flex">
-                <button type="submit" class="btn btn-primary">Download</button>
-                <%- include('../dropdown', {
-                    text: 'Try different source',
-                    options: sources,
-                    name: 'source'
-                }) %>
+                <% if (pageType == 'series') { %>
+                    <% seasons?.forEach((season, i) => { %>
+                        <div class="row">
+                            <div class="col-10">
+                                <h4>Season #<%- i + 1 %></h4>
+                            </div>
+                            <div class="col-2 form-check">
+                                <label for="selectAll<%- i + 1 %>" class="form-check-label">Select all</label>
+                                <input type="checkbox" id="selectAll<%- i + 1 %>" class="form-check-input select-all" checked />
+                            </div>
+                        </div>
+                        <hr class="m-0 mb-1">
+                        <div class="d-flex mb-4 justify-content-around">
+                            <% for( let episode = 1; episode <= season; episode++ ) { %>
+                                <div class="form-check form-inline">
+                                    <label class="form-check-label" for="episode<%- i %>#<%- episode %>"><%- episode %></label>
+                                    <input type="checkbox" name="season-<%- i + 1 %>" id="episode<%- i %>#<%- episode %>" value="<%- episode %>" checked class="form-check-input" />
+                                </div>
+                            <% } %>
+                        </div>
+                    <% }) %>
+                    <hr>
+                <% } %>
+                <p class="text-muted">Source: <%- source %></p>
+                <div class="d-flex">
+                    <button type="submit" class="btn btn-primary">Download</button>
+                    <%- include('../dropdown', {
+                        text: 'Try different source',
+                        options: sources,
+                        name: 'source'
+                    }) %>
+                </div>
+            </form>
+        <% } else { %>
+            <form action="/<%= pageType %>/download/<%= id %>/scrape" method="get">
+                <% if (pageType == 'series') { %>
+                    <div class="col-2 d-flex align-items-center">
+                        <label for="seasonInput" class="m-2">Season</label>
+                        <input type="number" name="season" id="seasonInput" class="form-control" min="1" max="99">
+                    </div>
+                    <div class="col-2 d-flex align-items-center">
+                        <label for="episodeInput" class="m-2">Episode</label>
+                        <input type="number" name="episode" id="episodeInput" class="form-control" min="1" max="99">
+                    </div>
+                <% } %>
+                <button type="submit" class="btn btn-secondary">Scrape</button>
+            </form>
+        <% } %>
+        <hr>
+        <h2>Upload local files</h2>
+        <form id="uploadForm" class="card p-2">
+            <div class="row">
+                <div class="col-8 d-flex align-items-center">
+                    <input type="file" name="file" id="movieFile" accept="video/mp4,video/x-m4v,video/*">
+                </div>
+                <% if (pageType == 'series') { %>
+                    <div class="col-2 d-flex align-items-center">
+                        <label for="seasonInput" class="m-2">Season</label>
+                        <input type="number" name="season" id="seasonInput" class="form-control" min="1" max="99">
+                    </div>
+                    <div class="col-2 d-flex align-items-center">
+                        <label for="episodeInput" class="m-2">Episode</label>
+                        <input type="number" name="episode" id="episodeInput" class="form-control" min="1" max="99">
+                    </div>
+                <% } %>
+            </div>
+            <div class="d-flex align-items-center justify-content-center">
+                <button type="submit" class="btn btn-primary" id="submitBtn">Upload</button>
             </div>
         </form>
     </div>
@@ -80,5 +119,44 @@ document.querySelectorAll('.select-all').forEach(checkbox => {
         });
     });
 });
+
+const submitBtn = document.getElementById('submitBtn');
+function uploadFile() {
+    const form = document.getElementById('uploadForm');
+    const formData = new FormData(form);
+    const pageType = '<%= pageType %>';
+    if(!formData.get('file')) {
+        alert('No file selected');
+        return;
+    }
+    if (pageType == 'series' && (!formData.get('season') || !formData.get('episode'))) {
+        alert('Season and episode are required');
+        return;
+    }
+    fetch('/<%= pageType %>/upload/<%= id %>', {
+        method: 'POST',
+        body: formData,
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            alert(data.error);
+        } else {
+            alert('File uploaded successfully');
+            form.reset();
+            submitBtn.innerText = 'Upload';
+            submitBtn.disabled = false;
+        }
+    });
+}
+
+
+document.getElementById('uploadForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    submitBtn.innerText = 'Uploading...';
+    submitBtn.disabled = true;
+    uploadFile();
+});
+
 </script>
 <%- include('../footer') %>

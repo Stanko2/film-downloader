@@ -37,7 +37,6 @@ export abstract class Downloader {
         let needRestart = false
         let restartTimeout: NodeJS.Timeout | undefined
         const callback = function(progress: DownloadProgress) {
-            console.log(progress.downloaded, progress.total, progress.percent);
             clearTimeout(restartTimeout)
             progressCallback(progress)
             if(progress.percent == 100) {
@@ -56,6 +55,7 @@ export abstract class Downloader {
                 await Promise.race([
                     this.startDownload(callback),
                     new Promise<void>((resolve, reject) => {
+                        if(!this.resumable) return
                         interval = setInterval(() => {
                             if(needRestart) {
                                 console.log('Restarting Download');

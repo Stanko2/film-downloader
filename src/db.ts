@@ -23,10 +23,12 @@ class Database {
         await this.client.set('TMDB_sessionId', val)
     }
 
-    client: RedisClientType;
+    client!: RedisClientType;
     constructor () {
-        this.client = createClient({url: process.env.REDIS_URL })
-        this.client.connect()
+        setTimeout(() => {
+            this.client = createClient({url: process.env.REDIS_URL })
+            this.client.connect()
+        }, 50)
     }
 
     async addDownloadCommand(command: IDownloadCommand): Promise<number> {

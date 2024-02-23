@@ -42,6 +42,9 @@ export default class FileDownloader extends Downloader {
         }).catch((err) => {
             throw new Error(err);
         })
+        console.log(res.headers['Content-Range']);
+        
+        
         this.downloadStream = fs.createWriteStream(this.filename, {mode: 0o777, flags: 'a'})
         res.data.pipe(this.downloadStream)
         return new Promise<void>((resolve, reject) => {

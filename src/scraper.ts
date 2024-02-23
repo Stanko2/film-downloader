@@ -1,5 +1,6 @@
-import { Fetcher, RunOutput, makeProviders, makeStandardFetcher, targets } from "@movie-web/providers";
+import { Fetcher, ScrapeMedia, makeProviders, makeStandardFetcher, targets, Stream, RunOutput } from "@movie-web/providers";
 import MovieDB from "node-themoviedb";
+import { getImdbId } from "./tmdb";
 
 function getFetcher(): Fetcher {
     return makeStandardFetcher(fetch);
@@ -20,7 +21,7 @@ export async function* getDownloadLinks(showData: MovieDB.Responses.TV.GetDetail
         for (let i = 0; i < season.episode_count; i++) {
             if(!downloadEpisode(season.season_number, i+1)) continue
             const s = await scrapeEpisode(showData, season.season_number, i+1, source);
-            console.log(`scraped episode #${i + 1} of season ${season.season_number}`);
+            console.log(`scraped episode #${i + 1} of season ${season.season_number}: ${s}`);
             if(s)
                 yield {
                 src: s,
@@ -30,30 +31,83 @@ export async function* getDownloadLinks(showData: MovieDB.Responses.TV.GetDetail
         }
     }
 }
+
+async function scrapeSource(data: ScrapeMedia, source: string) {
+    const providers = makeProviders({
+        fetcher: makeStandardFetcher(fetch),
+        target: targets.ANY
+    })
+    
+    const embeds =  await providers.runSourceScraper({
+        media: data,
+        id: source,
+        events: {
+            update: (output) => {
+                console.log('update', output);
+            }
+        }
+    }).catch(err=> {
+        throw new Error('error while scraping source ' + source + ':' + err);
+    })
+
+    if(!embeds) return null;
+
+    for (const embed of embeds.embeds) {
+        const out = await providers.runEmbedScraper({
+            id: embed.embedId,
+            url: embed.url,
+            events: {
+                update: (output) => {
+                    console.log('update', output);
+                }
+            }
+        }).catch(err=> {
+            throw new Error('error while scraping embed ' + embed.embedId + ':' + err);
+        });
+        if (out) {
+            console.log(out.stream[0]);
+            return <RunOutput>{
+                sourceId: source,
+                stream: out.stream[0],
+                embedId: embed.embedId
+            };
+        }
+    }
+    return null;
+}
   
 export async function scrapeEpisode(data: MovieDB.Responses.TV.GetDetails, season: number, episode: number, source: string | undefined): Promise<RunOutput | null> {
     const providers = makeProviders({
-        fetcher: getFetcher(),
+        fetcher: makeStandardFetcher(fetch),
         target: targets.ANY
     })
-
-    return providers.runAll({
-        media: {
-        type: 'show',
-            episode: {
-                number: episode,
-                tmdbId: data.id.toString()
-            },
-            season: {
-                number: season,
-                tmdbId: data.id.toString()
-            },
-            releaseYear: new Date(data.first_air_date).getFullYear(),
-            title: data.name,
-            tmdbId: data.id.toString(),
+    const imdb_id = await getImdbId(data.id.toString(), 'tv') ?? undefined;
+    const scrapedData: ScrapeMedia = {
+        type: "show",
+        episode: {
+            number: episode,
+            tmdbId: data.id.toString()
         },
-        sourceOrder: source ? [source] : undefined
-    }).catch(() => null)
+        season: {
+            number: season,
+            tmdbId: data.id.toString()
+        },
+        releaseYear: new Date(data.first_air_date).getFullYear(),
+        title: data.name,
+        tmdbId: data.id.toString(),
+        imdbId: imdb_id, 
+    }
+
+    if (source) {
+        return await scrapeSource(scrapedData, source);
+    }
+
+    return await providers.runAll({
+        media: scrapedData,
+    })
+    
+
+    
 }
 
 export async function ScrapeMovie(movieData: MovieDB.Responses.Movie.GetDetails, source: string | undefined) {
@@ -62,15 +116,20 @@ export async function ScrapeMovie(movieData: MovieDB.Responses.Movie.GetDetails,
       target: targets.ANY
     })
     
+    const scrapeData: ScrapeMedia = {   
+        type: 'movie',
+        title: movieData.title,
+        tmdbId: movieData.id.toString() || '',
+        imdbId: movieData.imdb_id ?? undefined,
+        releaseYear: new Date(movieData.release_date).getFullYear()
+    }
+
+    if(source) {
+        return await scrapeSource(scrapeData, source);
+    }
+
     return await providers.runAll({
-        media: {
-          type: 'movie',
-          title: movieData.title,
-          tmdbId: movieData.id.toString() || '',
-          imdbId: movieData.imdb_id ?? undefined,
-          releaseYear: new Date(movieData.release_date).getFullYear()
-        }, 
-        sourceOrder: source ? [source] : undefined
-      })
-  }
+        media: scrapeData,
+    })
+}
   

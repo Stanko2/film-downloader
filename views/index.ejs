@@ -53,7 +53,8 @@
                     <form method="post" action="/<%- download.id %>/cancel" class="col-2">
                         <button type="submit" class="btn btn-danger w-100">Cancel</button>
                     </form>
-                <% } else if (download.state == 'inProgress') { %>
+                <% } else if (download.state == 'error') { %>
+                    <%- download.error.message %>
                 <% } %>
             </div>
         </li>
@@ -68,7 +69,7 @@
     <% for(const download of complete) { %>
         <li class="list-group-item list-group-item-success">
             <div class="row">
-                <p class="col-8"><%- download.dest %></p>
+                <p class="col-8"><%- download.name %></p>
             </div>
         </li>
     <% } %>

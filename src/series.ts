@@ -8,8 +8,10 @@ import { getSeasonDetails, getTvShowFromID, init, searchSeries } from './tmdb'
 import { FileBasedStream, Qualities } from '@movie-web/providers'
 import axios from 'axios'
 import { scrapeEpisode, getDownloadLinks, listSources } from './scraper'
-import { getAllShows, getEpisodeName, getShowDetails, getYear, reloadLibrary } from './library'
+import { addEpisode, getAllShows, getEpisodeName, getShowDetails, getYear, reloadLibrary } from './library'
+import multer from 'multer'
 
+const upload = multer({ dest: 'uploads/' })
 const router = Router()
 
 init()
@@ -146,33 +148,16 @@ router.get('/add/searchResult', async (req, res) => {
   
 router.get('/download/:id', async (req,res) => {
   const data = await getTvShowFromID(req.params.id)
-  const metadata  = await scrapeEpisode(data, 1, 1, req.query.source as string);
-  let qualities: Record<string, string> = {}
-  if (metadata?.stream.type == 'file'){
-    Object.keys(metadata.stream.qualities).forEach((q) => {
-      qualities[q] = (metadata.stream as FileBasedStream).qualities[q].url
-    })
-  } else if (metadata?.stream.type == 'hls' && metadata?.stream.playlist) {
-    const manifest = await (await axios.get(metadata?.stream.playlist)).data
-    qualities = parseHlsQuality(manifest)
-  }
+  
   const url = req.originalUrl.split('?')[0]
-  console.log(qualities);
   
   res.render('pages/qualityChooser', {
     pageType: 'series',
     title: data.name,
-    qualities,
-    postUrl: req.originalUrl,
-    captions: metadata?.stream.captions.map(cap => {
-      return {
-        text: cap.language,
-        value: cap.url
-      }
-    }),
-    source: metadata?.sourceId,
-    type: metadata?.stream.type,
+    postUrl: undefined,
+    captions: [],
     banner: data.poster_path,
+    id: req.params.id,
     sources: listSources().map(x => {
       return {
         text: x.name,
@@ -181,6 +166,60 @@ router.get('/download/:id', async (req,res) => {
     }),
     seasons: data.seasons.map(x=> x.episode_count)
   })
+})
+
+router.get('/download/:id/scrape', async (req, res) => {
+  const data = await getTvShowFromID(req.params.id)
+  const metadata  = await scrapeEpisode(data, req.body.season ?? 1, req.body.episode ?? 1, req.query.source as string);
+  const stream = metadata?.stream
+  const url = req.originalUrl.split('?')[0]
+  let qualities: Record<string, string> = {}
+  if (stream?.type == 'file'){
+    Object.keys(stream.qualities).forEach((q) => {
+      qualities[q] = stream.qualities[q].url
+    })
+  } else if (stream?.type == 'hls' && stream?.playlist) {
+    const manifest = await (await axios.get(stream?.playlist)).data
+    qualities = parseHlsQuality(manifest)
+  }
+
+  res.render('pages/qualityChooser', {
+    pageType: 'series',
+    title: data.name,
+    qualities,
+    postUrl: req.originalUrl,
+    captions: stream?.captions.map(cap => {
+      return {
+        text: cap.language,
+        value: cap.url
+      }
+    }),
+    source: metadata?.sourceId,
+    type: stream?.type,
+    banner: data.poster_path,
+    id: req.params.id,
+    sources: listSources().map(x => {
+      return {
+        text: x.name,
+        value: url + '?source=' + x.id
+      }
+    }),
+    seasons: data.seasons.map(x=> x.episode_count)
+  })
+})
+
+router.post('/upload/:id', upload.single('file'), async (req, res) => {
+  if(!req.file) {
+    res.send({error: 'No files uploaded'})
+    return
+  }
+  if (!req.body.season || !req.body.episode) {
+    res.send({error: 'No season or episode selected'})
+    return
+  }
+  const extname = path.extname(req.file.originalname);
+  await addEpisode(req.params.id, req.file.path, extname, req.body.season, req.body.episode);
+  res.send({success: true})
 })
 
 router.post('/download/:id', (req, res) => {
@@ -193,8 +232,10 @@ router.post('/download/:id', (req, res) => {
     for await (const link of getDownloadLinks(data, req.body.source, (season: number, episode: number) => {
      return req.body['season-' + season] && (req.body['season-' + season].includes(episode.toString()) || req.body['season-' + season] == episode.toString())
     })) {
+      console.log('downloading episode ' + link.episode + ' of season ' + link.season + ' of ' + data.name);
       const dirName = `${data.name} (${getYear(data.first_air_date)})`
       const fileName = `${dirName} ${getEpisodeName(link.season, link.episode)}`
+      
       if (fs.existsSync(await db.getSaveLocation('series') + '/' + dirName + '/' + fileName + '.mp4')) continue
       const captions:Record<string, string> = {}
       let src: string | undefined

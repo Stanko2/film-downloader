@@ -8,9 +8,11 @@ import { IsVideo, getStreamMetadata, parseHlsQuality } from './util'
 import { getMovieFromID, init, searchMovie } from './tmdb'
 import { Qualities } from '@movie-web/providers'
 import axios from 'axios'
-import { getAllMovies, getMovieDetails, reloadLibrary } from './library'
+import { addMovie, getAllMovies, getMovieDetails, reloadLibrary } from './library'
 import { ScrapeMovie, listSources } from './scraper'
+import multer from 'multer'
 
+const upload = multer({ dest: 'uploads/' })
 const router = Router()
 init()
 
@@ -23,7 +25,7 @@ router.get('/reload', async (_req, res) => {
 })
 
 router.get('/', async (_req, res)=>{
-  const data = JSON.parse(await db.client.get('moviesLibrary') || '[]')
+  const data = JSON.parse(await db.client.get('Library:films') || '[]')
   if(data.length == 0) {
     await reloadLibrary('films').catch((err) => {
       console.error(err);
@@ -38,8 +40,12 @@ router.get('/', async (_req, res)=>{
 router.get('/:id/streams', async (req,res) => {
   const films = await getAllMovies()
   const location = await db.getSaveLocation('films')
-  const filmName = films[parseInt(req.params.id)] 
+  const filmName = films[parseInt(req.params.id) - 1] 
   const streamNames = fs.readdirSync(path.join(location, filmName)).filter(x=> IsVideo(x))
+  if(streamNames.length == 0) {
+    res.render('error', {error: 'No video files found'})
+    return
+  }
   const streams: any[] = []
   const details = await getMovieDetails(filmName).catch(()=>null)
   for (const stream of streamNames) {
@@ -132,8 +138,29 @@ router.get('/add/searchResult', async (req, res) => {
   
 router.get('/download/:id', async (req,res) => {
   const data = await getMovieFromID(req.params.id)
-  const providers = await ScrapeMovie(data, req.query.source as string)
-  const stream = providers?.stream
+  res.render('pages/qualityChooser', {
+    pageType: 'films',
+    title: data.title,
+    qualities: undefined,
+    postUrl: undefined,
+    banner: data?.poster_path,
+    id: req.params.id,
+    sources: listSources().map(x => {
+      return {
+        text: x.name,
+        value: req.originalUrl.split('?')[0] + '?source=' + x.id
+      }
+    })
+  })
+})
+
+router.post('/download/:id/scrape', async (req, res) => {  
+  const data = await getMovieFromID(req.params.id)
+  const scrapeOutput = await ScrapeMovie(data, req.query.source as string).catch((err) => {
+    res.render('error', {error: err});
+  });
+  if(!scrapeOutput) return;
+  const stream = scrapeOutput?.stream;
   if(stream == undefined) {
     res.render('error', {error: 'No stream found'})
     return
@@ -150,21 +177,22 @@ router.get('/download/:id', async (req,res) => {
       qualities = parseHlsQuality(playlist)
     }
   }
-
+  
   res.render('pages/qualityChooser', {
-    pageType: 'movie',
+    pageType: 'films',
     title: data.title,
     qualities,
     type: stream.type,
     postUrl: req.originalUrl,
-    captions: providers?.stream.captions.map(x => {
+    captions: scrapeOutput?.stream.captions.map(x => {
       return {
         text: x.language,
         value: x.url
       }
     }),
-    source: providers?.sourceId,
+    source: scrapeOutput?.sourceId,
     banner: data?.poster_path,
+    id: req.params.id,
     sources: listSources().map(x => {
       return {
         text: x.name,
@@ -172,6 +200,16 @@ router.get('/download/:id', async (req,res) => {
       }
     })
   })
+})
+
+router.post('/upload/:id', upload.single('file'), async (req, res) => {
+  if(!req.file) {
+    res.send({error: 'No files uploaded'})
+    return
+  }
+  const extname = path.extname(req.file.originalname);
+  await addMovie(req.params.id, req.file.path, extname);
+  res.send({success: true})
 })
 
 router.post('/download/:id', async (req, res) => {

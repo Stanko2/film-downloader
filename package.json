@@ -16,12 +16,13 @@
   "dependencies": {
     "@movie-web/providers": "latest",
     "@types/node": "^18.19.14",
+    "Buffer": "^0.0.0",
     "axios": "^1.6.5",
     "body-parser": "^1.20.2",
-    "Buffer": "^0.0.0",
     "ejs": "^3.1.8",
     "express": "^4.18.2",
     "fluent-ffmpeg": "^2.1.2",
+    "multer": "^1.4.5-lts.1",
     "node-cron": "^3.0.2",
     "node-themoviedb": "^0.2.8",
     "redis": "^4.6.12",
@@ -37,6 +38,7 @@
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/fluent-ffmpeg": "^2.1.21",
+    "@types/multer": "^1.4.11",
     "@types/node-cron": "^3.0.7",
     "@typescript-eslint/eslint-plugin": "^5.54.0",
     "@typescript-eslint/parser": "^5.54.0",

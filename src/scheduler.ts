@@ -8,6 +8,12 @@ class Scheduler {
     task!: ScheduledTask
     cron!: string
     constructor() {
+        setTimeout(()=> {
+            this.init()
+        }, 1000)
+    }
+    
+    init() {
         db.getDownloadCron().then(cron=> {
             this.cron = cron
             this.task = schedule(cron, this.run)

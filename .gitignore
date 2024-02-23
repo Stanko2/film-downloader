@@ -2,3 +2,4 @@ node_modules/*
 lib/*
 ./docker-compose.yml
 docker-compose.yml
+uploads/*

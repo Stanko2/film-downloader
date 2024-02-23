@@ -173,3 +173,26 @@ export async function getWatchlist(): Promise<{movies: MovieDB.Objects.Movie[], 
         shows: (await shows)?.data.results || []
     }
 }
+
+export async function getImdbId(id: string, type: 'movie' | 'tv') {
+    if(!api){
+        throw new Error('TMDB API not initialized')
+    }
+
+    if(type === 'movie') {
+        const res = await api.movie.getExternalIDs({
+            pathParameters: {
+                movie_id: id
+            }
+        })
+        return res.data.imdb_id
+    } else {
+        const res = await api.tv.getExternalIDs({
+            pathParameters: {
+                tv_id: id
+            }
+        })
+        return res.data.imdb_id
+    }
+
+}

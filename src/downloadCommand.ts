@@ -70,6 +70,8 @@ export default class DownloadCommand {
             db.addDownloadCommand(this.toJSON('scheduled')).then(id => {
                 this.id = id
                 this.init()
+                console.log('Added Download Command ', id);
+                
             });
         }
         else this.init()
@@ -113,7 +115,7 @@ export default class DownloadCommand {
                 db.updateDownloadById(this.id, this.toJSON('complete'))
             }).catch(() => {
                 this.reScrape().catch(err=> {
-                    db.updateDownloadById(this.id, {...this.toJSON('error'), error: 'Error during re-scrape: ' + err });
+                    db.updateDownloadById(this.id, {...this.toJSON('error'), error: new Error('Error during re-scrape: ' + err) });
                     console.error(err.message);
                 }).then(() => {
                     this.init();
@@ -169,7 +171,7 @@ export default class DownloadCommand {
                 this.videoURL = quality
             }
             db.updateDownloadById(this.id, this.toJSON('scheduled'))
-        }
+        } 
     }
 
 }

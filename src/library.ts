@@ -25,6 +25,7 @@ async function getAllEntries(mediaType: 'series' | 'films') {
   const location = await db.getSaveLocation(mediaType) 
   if(fs.existsSync(location)){
     const films = fs.readdirSync(location).filter(x => fs.statSync(path.join(location, x)).isDirectory())
+    console.log('Found ' + films.length + ' ' + mediaType + ' in library');
     return films
   }
   else throw new Error(mediaType + ' library non-existed or non specified')
@@ -84,3 +85,47 @@ export async function reloadLibrary(mediaType: 'series' | 'films') {
   db.client.set('Library:' + mediaType, JSON.stringify(library))
 }
   
+export async function addMovie(id: string, filePath: string, fileExt: string) {
+  const location = await db.getSaveLocation('films');
+  const data = await getMovieFromID(id)
+
+  const name = data.title + ' (' + getYear(data.release_date) + ')';
+  const folder = path.join(location, name)
+  if(!fs.existsSync(folder)) {
+    fs.mkdirSync(folder)
+  }
+  console.log('Copying file to ' + folder);
+  
+  return new Promise<void>((resolve, reject) => {
+    fs.copyFile(filePath, path.join(folder, name + fileExt), (err) => {
+      if(err) reject(err)
+      fs.rm(filePath, (err)=>{
+        if(err) reject(err)
+        resolve()
+      });
+    });
+  });
+
+}
+
+export async function addEpisode(id: string, filePath: string, fileExt: string, season: number, episode: number) {
+  const location = await db.getSaveLocation('series');
+  const data = await getTvShowFromID(id)
+
+  const name = data.name + ' (' + getYear(data.first_air_date) + ')';
+  const folder = path.join(location, name)
+  if(!fs.existsSync(folder)) {
+    fs.mkdirSync(folder)
+  }
+  console.log('Copying file to ' + folder);
+  
+  return new Promise<void>((resolve, reject) => {
+    fs.copyFile(filePath, path.join(folder, name + getEpisodeName(season, episode) + fileExt), (err) => {
+      if(err) reject(err)
+      fs.rm(filePath, (err)=>{
+        if(err) reject(err)
+        resolve()
+      });
+    });
+  });
+}

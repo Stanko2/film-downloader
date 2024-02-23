@@ -15,10 +15,12 @@ app.use('/settings', settings)
 app.use('/films', films)
 app.use('/series', series)
 
-Init().then(()=>{
-  app.listen(process.env.PORT || 3000, ()=>{
-    console.log('server started')
-  })
+setTimeout(()=> {
+  // Init()
+}, 1000);
+
+app.listen(process.env.PORT || 3000, ()=>{
+  console.log('server started')
 })
 
 
