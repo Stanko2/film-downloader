@@ -1,6 +1,7 @@
 import TMDB from 'node-themoviedb'
 import db from './db';
 import MovieDB from 'node-themoviedb';
+import { Logger } from './logger';
 
 export let api: TMDB | undefined;
 

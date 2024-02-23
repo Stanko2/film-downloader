@@ -72,9 +72,7 @@ export async function reloadLibrary(mediaType: 'series' | 'films') {
   const library: unknown[] = []
   const videos = await getAllEntries(mediaType)
   for (const [i, video] of videos.entries()) {
-    const details = await getDetails(video, mediaType).catch((err) => {
-      return null
-    })
+    const details = await getDetails(video, mediaType).catch(() => null)
     library.push({
       name: video,
       poster: details?.poster_path,

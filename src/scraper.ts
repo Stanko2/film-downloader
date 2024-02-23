@@ -1,4 +1,4 @@
-import { Fetcher, ScrapeMedia, makeProviders, makeStandardFetcher, targets, Stream, RunOutput } from "@movie-web/providers";
+import { Fetcher, ScrapeMedia, makeProviders, makeStandardFetcher, targets, RunOutput } from "@movie-web/providers";
 import MovieDB from "node-themoviedb";
 import { getImdbId } from "./tmdb";
 import { Logger } from "./logger";

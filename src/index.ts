@@ -18,7 +18,7 @@ app.use('/series', series)
 app.use('/logs', logs)
 
 setTimeout(()=> {
-  // Init()
+  Init()
 }, 1000);
 
 app.listen(process.env.PORT || 3000, ()=>{

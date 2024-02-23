@@ -46,14 +46,14 @@ export class Logger {
 
 const router = express.Router();
 
-router.get('/', async (req, res) => {
+router.get('/', async (_req, res) => {
     const logs = await Logger.getLogs();
     res.render('logs', { logs, 
         levelMap: { info: 'primary', warn: 'warning', error: 'danger' },
     });
 });
 
-router.post('/clear', async (req, res) => {
+router.post('/clear', async (_req, res) => {
     await Logger.clearLogs();
     res.redirect('/logs');
 });

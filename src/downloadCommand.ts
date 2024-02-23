@@ -54,6 +54,7 @@ export async function Init() {
             cmd.scrapeArgs = download.scrapeArgs
         }
     }
+    console.log('Downloads Initialized');
 }
 
 export const downloaders: Record<number, DownloadCommand> = {}
