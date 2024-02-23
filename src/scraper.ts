@@ -1,6 +1,7 @@
 import { Fetcher, ScrapeMedia, makeProviders, makeStandardFetcher, targets, Stream, RunOutput } from "@movie-web/providers";
 import MovieDB from "node-themoviedb";
 import { getImdbId } from "./tmdb";
+import { Logger } from "./logger";
 
 function getFetcher(): Fetcher {
     return makeStandardFetcher(fetch);
@@ -20,14 +21,18 @@ export async function* getDownloadLinks(showData: MovieDB.Responses.TV.GetDetail
     for (const season of showData.seasons) {
         for (let i = 0; i < season.episode_count; i++) {
             if(!downloadEpisode(season.season_number, i+1)) continue
-            const s = await scrapeEpisode(showData, season.season_number, i+1, source);
-            console.log(`scraped episode #${i + 1} of season ${season.season_number}: ${s}`);
-            if(s)
+            const s = await scrapeEpisode(showData, season.season_number, i+1, source).catch(err=> {
+                Logger.error(new Error(`${showData.name}: error while scraping episode #${i + 1} of season ${season.season_number}: ${err}`));
+                return null;
+            });
+            if(s){
+                Logger.log(`${showData.name}: scraped episode #${i + 1} of season ${season.season_number}: ${s}`);
                 yield {
-                src: s,
-                season: season.season_number,
-                episode: i+1
-            };
+                    src: s,
+                    season: season.season_number,
+                    episode: i+1
+                };
+            }
         }
     }
 }
@@ -41,11 +46,6 @@ async function scrapeSource(data: ScrapeMedia, source: string) {
     const embeds =  await providers.runSourceScraper({
         media: data,
         id: source,
-        events: {
-            update: (output) => {
-                console.log('update', output);
-            }
-        }
     }).catch(err=> {
         throw new Error('error while scraping source ' + source + ':' + err);
     })
@@ -56,16 +56,10 @@ async function scrapeSource(data: ScrapeMedia, source: string) {
         const out = await providers.runEmbedScraper({
             id: embed.embedId,
             url: embed.url,
-            events: {
-                update: (output) => {
-                    console.log('update', output);
-                }
-            }
         }).catch(err=> {
             throw new Error('error while scraping embed ' + embed.embedId + ':' + err);
         });
         if (out) {
-            console.log(out.stream[0]);
             return <RunOutput>{
                 sourceId: source,
                 stream: out.stream[0],
@@ -99,15 +93,18 @@ export async function scrapeEpisode(data: MovieDB.Responses.TV.GetDetails, seaso
     }
 
     if (source) {
-        return await scrapeSource(scrapedData, source);
+        return await scrapeSource(scrapedData, source).catch(err=> {
+            Logger.error(new Error('error while scraping ' + data.name +' from source ' + source + ':' + err));
+            return null;
+        });
     }
 
     return await providers.runAll({
         media: scrapedData,
-    })
-    
-
-    
+    }).catch(err=> {
+        Logger.error(new Error('error while scraping ' + data.name + ':' + err));
+        return null;
+    });
 }
 
 export async function ScrapeMovie(movieData: MovieDB.Responses.Movie.GetDetails, source: string | undefined) {

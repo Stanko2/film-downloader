@@ -5,6 +5,7 @@ import {existsSync, createReadStream, createWriteStream, WriteStream} from 'fs';
 import { ffprobe } from 'fluent-ffmpeg';
 import { DownloadProgress, Downloader } from '.';
 import axios from 'axios';
+import { Logger } from '../logger';
 
 export default class HlsDownloader extends Downloader  {
     resumable = true
@@ -81,7 +82,7 @@ export default class HlsDownloader extends Downloader  {
         HlsDownloader.filesProcessing.add(file)
         this.resumable = false
         await this.mergeSegments(dir, file.split('.')[0], paths)
-        console.log(`Finished Download ${this.name}`)
+        Logger.log(`Finished Download ${this.name}`)
     }
 
     async getSegments(playlistURL: string): Promise<string[]> {
@@ -148,13 +149,9 @@ export default class HlsDownloader extends Downloader  {
                         '-c', 'copy',
                         `'./${name}.final.mp4'`
                     ]
-                    console.log(args.join(' '));
                     const ffmpeg = spawn('ffmpeg', args, {cwd: process.cwd(), shell: true})
-                    ffmpeg.stdout.on('data', (data) => {
-                        console.log(data.toString());
-                    })
                     ffmpeg.stderr.on('data', (data) => {
-                        console.error(data.toString());
+                        Logger.warn('ffmpeg error: ' + data.toString());
                     })
                     ffmpeg.on('close', async (code) => {
                         if (code != 0) {
@@ -187,13 +184,10 @@ export default class HlsDownloader extends Downloader  {
     async downloadSegment(url: string, segName: string, dest: string) {
         
         let retry = 0
-        console.log(url + '/' + segName, dest);
         
         while (retry < 10) {
             try {
                 const res = await axios.get(url + '/' + segName, {responseType: 'arraybuffer', timeout: 4000})
-                console.log(`Downloaded ${segName}`, res.status);
-                
                 const buf = res?.data                
 
                 if(buf){

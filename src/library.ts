@@ -4,6 +4,7 @@ import { parseFileName } from './util'
 import { getMovieFromID, getTvShowFromID, searchMovie, searchSeries } from './tmdb'
 import path from 'path'
 import MovieDB from 'node-themoviedb'
+import { Logger } from './logger'
 
 export function getEpisodeName(season: number, episode: number): string {
   let ret = 'S'
@@ -25,7 +26,7 @@ async function getAllEntries(mediaType: 'series' | 'films') {
   const location = await db.getSaveLocation(mediaType) 
   if(fs.existsSync(location)){
     const films = fs.readdirSync(location).filter(x => fs.statSync(path.join(location, x)).isDirectory())
-    console.log('Found ' + films.length + ' ' + mediaType + ' in library');
+    Logger.log('Found ' + films.length + ' ' + mediaType + ' in library');
     return films
   }
   else throw new Error(mediaType + ' library non-existed or non specified')
@@ -45,7 +46,7 @@ async function getDetails(name: string, mediaType: 'series' | 'films') {
   if(isNaN(id)) {
     const data = mediaType === 'series' ? await searchSeries(title) : await searchMovie(title, year)
     if(data.length == 0) {
-      console.log('No data found for ' + name);
+      Logger.warn('No TMDB entry found for ' + name);
       
       return null
     }
@@ -72,7 +73,6 @@ export async function reloadLibrary(mediaType: 'series' | 'films') {
   const videos = await getAllEntries(mediaType)
   for (const [i, video] of videos.entries()) {
     const details = await getDetails(video, mediaType).catch((err) => {
-      console.error(err);
       return null
     })
     library.push({
@@ -94,7 +94,7 @@ export async function addMovie(id: string, filePath: string, fileExt: string) {
   if(!fs.existsSync(folder)) {
     fs.mkdirSync(folder)
   }
-  console.log('Copying file to ' + folder);
+  Logger.log('Importing file to ' + folder);
   
   return new Promise<void>((resolve, reject) => {
     fs.copyFile(filePath, path.join(folder, name + fileExt), (err) => {
@@ -117,7 +117,7 @@ export async function addEpisode(id: string, filePath: string, fileExt: string, 
   if(!fs.existsSync(folder)) {
     fs.mkdirSync(folder)
   }
-  console.log('Copying file to ' + folder);
+  Logger.log('Importing file to ' + folder);
   
   return new Promise<void>((resolve, reject) => {
     fs.copyFile(filePath, path.join(folder, name + getEpisodeName(season, episode) + fileExt), (err) => {

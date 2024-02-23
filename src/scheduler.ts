@@ -23,7 +23,6 @@ class Scheduler {
     }
     
     async run(r: Date | 'manual' | 'init') {
-        console.log(r.toString() + ' | ran automatic download')
         if(Downloader.busy) return
         const download = (await db.getAllDownloads()).sort((a,b)=> a.id - b.id).filter(d => d.state == 'scheduled')[0]
         if(!download) return

@@ -152,8 +152,7 @@ export async function getWatchlist(): Promise<{movies: MovieDB.Objects.Movie[], 
             sort_by: 'created_at.asc',
         }
     }).catch((err) => {
-        console.log(err);
-        
+        Logger.error(err);
     })
 
     const shows = api.account.getTVShowWatchlist({
@@ -165,7 +164,7 @@ export async function getWatchlist(): Promise<{movies: MovieDB.Objects.Movie[], 
             sort_by: 'created_at.asc',
         }
     }).catch((err) => {
-        console.log(err);
+        Logger.error(err);
     })
 
     return {

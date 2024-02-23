@@ -1,4 +1,5 @@
 import fs from 'fs'
+import { Logger } from '../logger'
 
 export interface DownloadProgress {
     total: number
@@ -58,7 +59,7 @@ export abstract class Downloader {
                         if(!this.resumable) return
                         interval = setInterval(() => {
                             if(needRestart) {
-                                console.log('Restarting Download');
+                                Logger.warn(this.name + ' Restarting Download');
                                 clearInterval(interval)
                                 reject(new Error('Download stuck'))
                             }

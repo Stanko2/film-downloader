@@ -3,6 +3,7 @@ import bodyparser from 'body-parser'
 import settings from './settings'
 import films from './films'
 import series from './series'
+import logs from './logger'
 import db from './db'
 import { downloaders, Init } from './downloadCommand'
 import { getWatchlist } from './tmdb'
@@ -14,6 +15,7 @@ app.use(bodyparser.urlencoded({extended: true}))
 app.use('/settings', settings)
 app.use('/films', films)
 app.use('/series', series)
+app.use('/logs', logs)
 
 setTimeout(()=> {
   // Init()

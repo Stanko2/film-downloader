@@ -8,7 +8,6 @@ class Database {
         return await this.client.get(type + 'saveLocation') || '/home/stanko/Documents'
     }
     async setSaveLocation(type: 'films' | 'series', path: string) : Promise<void> {
-        console.log(fs.readdirSync(path))
         if(!fs.existsSync(path)) {
             throw new Error('Non-existent path')
         }

@@ -5,7 +5,7 @@ import DownloadCommand from './downloadCommand'
 import path from 'path'
 import { IsVideo, parseHlsQuality, getStreamMetadata, parseSeasonEpisode, compareQualities } from './util'
 import { getSeasonDetails, getTvShowFromID, init, searchSeries } from './tmdb'
-import { FileBasedStream, Qualities } from '@movie-web/providers'
+import { Qualities } from '@movie-web/providers'
 import axios from 'axios'
 import { scrapeEpisode, getDownloadLinks, listSources } from './scraper'
 import { addEpisode, getAllShows, getEpisodeName, getShowDetails, getYear, reloadLibrary } from './library'
@@ -18,7 +18,6 @@ init()
 
 router.get('/reload', async (_req, res) => {
   await reloadLibrary('series').catch((err) => {
-    console.error(err);
     res.render('error', {error: err});
   })
   res.redirect('/')
@@ -28,7 +27,6 @@ router.get('/', async (_req, res)=>{
   const data = JSON.parse(await db.client.get('Library:series') || '[]')
   if(data.length == 0) {
     await reloadLibrary('series').catch((err) => {
-      console.error(err);
       res.render('error', {error: err});
     })
     res.render('pages/tvShows/list', {
@@ -232,7 +230,6 @@ router.post('/download/:id', (req, res) => {
     for await (const link of getDownloadLinks(data, req.body.source, (season: number, episode: number) => {
      return req.body['season-' + season] && (req.body['season-' + season].includes(episode.toString()) || req.body['season-' + season] == episode.toString())
     })) {
-      console.log('downloading episode ' + link.episode + ' of season ' + link.season + ' of ' + data.name);
       const dirName = `${data.name} (${getYear(data.first_air_date)})`
       const fileName = `${dirName} ${getEpisodeName(link.season, link.episode)}`
       

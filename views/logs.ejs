@@ -1,0 +1,21 @@
+<%- include('header') -%>
+
+<h1 class="mt-3">Logs</h1>
+<hr>
+<ul class="list-group">
+    <% for(const log of logs) { %>
+        <li class="list-group-item list-group-item-<%= levelMap[log.level] %>">
+            <div class="row">
+                <p class="col-2"><%- new Date(log.timestamp).toUTCString() %></p>
+                <p class="col-10"><%- log.message %></p>
+            </div>
+        </li>
+    <% } %>
+</ul>
+<% if (logs.length == 0) { %>
+    <p>No logs</p>
+<% } %>
+<form action="/logs/clear" method="post">
+    <button type="submit" class="btn btn-danger w-100 mt-4">Clear logs</button>
+</form>
+<%- include('footer') -%>

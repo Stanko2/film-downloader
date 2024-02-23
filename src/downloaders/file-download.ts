@@ -1,6 +1,7 @@
 import fs from 'fs'
 import axios from 'axios'
 import { DownloadProgress, Downloader } from '.'
+import { Logger } from '../logger'
 
 export default class FileDownloader extends Downloader {
     resumable = false
@@ -42,14 +43,12 @@ export default class FileDownloader extends Downloader {
         }).catch((err) => {
             throw new Error(err);
         })
-        console.log(res.headers['Content-Range']);
-        
         
         this.downloadStream = fs.createWriteStream(this.filename, {mode: 0o777, flags: 'a'})
         res.data.pipe(this.downloadStream)
         return new Promise<void>((resolve, reject) => {
             this.downloadStream?.on('finish', () => {
-                console.log(`Finished Download ${this.name}`)
+                Logger.log(`Finished Download ${this.name}`)
                 resolve()
             })
             this.downloadStream?.on('error', (err) => {

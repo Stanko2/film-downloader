@@ -18,7 +18,6 @@ init()
 
 router.get('/reload', async (_req, res) => {
   await reloadLibrary('films').catch((err) => {
-    console.error(err);
     res.render('error', {error: err});
   })
   res.redirect('/')
@@ -28,7 +27,6 @@ router.get('/', async (_req, res)=>{
   const data = JSON.parse(await db.client.get('Library:films') || '[]')
   if(data.length == 0) {
     await reloadLibrary('films').catch((err) => {
-      console.error(err);
       res.render('error', {error: err});
     })
   }
@@ -118,7 +116,6 @@ router.get('/add', (_req, res) => {
 
 router.post('/add/search', async (req,res)=> {
   const query = req.body.FilmName
-  console.log(query);
   res.redirect('/films/add/searchResult?q=' + query);
 })
 

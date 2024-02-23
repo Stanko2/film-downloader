@@ -9,6 +9,7 @@ import MovieDB from 'node-themoviedb';
 import { Qualities } from '@movie-web/providers';
 import { ScrapeMovie } from './scraper';
 import { parseHlsQuality } from './util';
+import { Logger } from './logger';
 
 type DownloadType = 'hls' | 'file'
 
@@ -42,14 +43,10 @@ interface filmscrapeArgs extends scrapeArgs {
 }
 
 export async function Init() {
-    console.log('Initializing Downloads');
-    
     for (const key of Object.keys(downloaders)) {
         delete downloaders[parseInt(key)];
     }
     const downloads = await db.getAllDownloads()
-    console.log(downloads.length);
-    
     for (const download of downloads) {
         // eslint-disable-next-line @typescript-eslint/no-empty-function
         const cmd = new DownloadCommand(download.url, download.dest, download.name, ()=>{}, {}, download.type, download.id)
@@ -70,8 +67,6 @@ export default class DownloadCommand {
             db.addDownloadCommand(this.toJSON('scheduled')).then(id => {
                 this.id = id
                 this.init()
-                console.log('Added Download Command ', id);
-                
             });
         }
         else this.init()
@@ -105,7 +100,7 @@ export default class DownloadCommand {
         const state = (await db.getDownloadById(this.id)).state
         if(state === 'scheduled'){
             db.updateDownloadById(this.id, this.toJSON('inProgress'))
-            console.log(`Starting Download ${this.name}`);
+            Logger.log(`Starting Download ${this.name}`);
             this.downloader.start((p) => {
                 db.updateDownloadById(this.id, {
                     ...this.toJSON('inProgress'),
@@ -116,7 +111,7 @@ export default class DownloadCommand {
             }).catch(() => {
                 this.reScrape().catch(err=> {
                     db.updateDownloadById(this.id, {...this.toJSON('error'), error: new Error('Error during re-scrape: ' + err) });
-                    console.error(err.message);
+                    Logger.error(err);
                 }).then(() => {
                     this.init();
                     setTimeout(() => {
