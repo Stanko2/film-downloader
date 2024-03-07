@@ -43,7 +43,8 @@ export default class HlsDownloader extends Downloader  {
         console.log(`downloading ${segments.length} segments`);
         const paths: string[] = []
         for (const segment of segments) {
-            const p = path.join(this.segmentsDir, segment)
+            const split = segment.split('/');
+            const p = path.join(this.segmentsDir, split[split.length - 1])
             paths.push(p)
             
             if (existsSync(p) || HlsDownloader.filesProcessing.has(segment)) {
@@ -187,7 +188,11 @@ export default class HlsDownloader extends Downloader  {
         
         while (retry < 10) {
             try {
-                const res = await axios.get(url + '/' + segName, {responseType: 'arraybuffer', timeout: 4000})
+                let wholeURL = url + '/' + segName;
+                if(segName.startsWith('https://') || segName.startsWith('http://')){
+                    wholeURL = segName
+                }
+                const res = await axios.get(wholeURL, {responseType: 'arraybuffer', timeout: 4000})
                 const buf = res?.data                
 
                 if(buf){
