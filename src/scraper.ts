@@ -133,7 +133,7 @@ export async function ScrapeMovie(movieData: MovieDB.Responses.Movie.GetDetails,
 
 export const router = Router();
 
-router.get('/sources', (req, res) => {
+router.get('/sources', (_req, res) => {
     res.send(listSources());
 });
 
