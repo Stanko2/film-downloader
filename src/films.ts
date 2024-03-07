@@ -151,7 +151,7 @@ router.get('/download/:id', async (req,res) => {
   })
 })
 
-router.post('/download/:id/scrape', async (req, res) => {  
+router.get('/download/:id/scrape', async (req, res) => {  
   const data = await getMovieFromID(req.params.id)
   const scrapeOutput = await ScrapeMovie(data, req.query.source as string).catch((err) => {
     res.render('error', {error: err});
@@ -180,7 +180,7 @@ router.post('/download/:id/scrape', async (req, res) => {
     title: data.title,
     qualities,
     type: stream.type,
-    postUrl: req.originalUrl,
+    postUrl: '/films/download/' + req.params.id,
     captions: scrapeOutput?.stream.captions.map(x => {
       return {
         text: x.language,

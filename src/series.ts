@@ -185,7 +185,7 @@ router.get('/download/:id/scrape', async (req, res) => {
     pageType: 'series',
     title: data.name,
     qualities,
-    postUrl: req.originalUrl,
+    postUrl: '/series/download/' + req.params.id,
     captions: stream?.captions.map(cap => {
       return {
         text: cap.language,

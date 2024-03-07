@@ -1,7 +1,8 @@
 import { Fetcher, ScrapeMedia, makeProviders, makeStandardFetcher, targets, RunOutput } from "@movie-web/providers";
 import MovieDB from "node-themoviedb";
-import { getImdbId } from "./tmdb";
+import { getImdbId, getMovieFromID, getTvShowFromID } from "./tmdb";
 import { Logger } from "./logger";
+import { Router } from "express";
 
 function getFetcher(): Fetcher {
     return makeStandardFetcher(fetch);
@@ -129,4 +130,47 @@ export async function ScrapeMovie(movieData: MovieDB.Responses.Movie.GetDetails,
         media: scrapeData,
     })
 }
-  
+
+export const router = Router();
+
+router.get('/sources', (req, res) => {
+    res.send(listSources());
+});
+
+router.get('/movie', async (req, res) => {
+    const tmdbId = req.query['tmdb_id'] as string;
+    if(tmdbId == undefined){
+        res.statusCode = 400;
+        res.send({error: "No TMDB ID specified"});
+        return;
+    }
+    const data = await getMovieFromID(tmdbId);
+    const out = await ScrapeMovie(data, req.query["source"] as string).catch(()=>undefined);
+    if(out) {
+        res.statusCode = 200;
+        res.send(out);
+        return;
+    }
+    res.statusCode = 404;
+    res.send({error: "Not found"});  
+})
+
+router.get('/show', async (req,res) => {
+    const tmdbId = req.query['tmdb_id'] as string;
+    if(tmdbId == undefined){
+        res.statusCode = 400;
+        res.send({error: "No TMDB ID specified"});
+        return;
+    }
+    const data = await getTvShowFromID(tmdbId);
+    const episode = parseInt(req.query['episode'] as string ?? '1');
+    const season = parseInt(req.query['season'] as string ?? '1');
+    const out = await scrapeEpisode(data, season, episode, req.query['source'] as string).catch(()=>undefined);
+    if(out) {
+        res.statusCode = 200;
+        res.send(out);
+        return;
+    }
+    res.statusCode = 404;
+    res.send({error: "Not found"});  
+});

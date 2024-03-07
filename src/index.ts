@@ -7,6 +7,7 @@ import logs from './logger'
 import db from './db'
 import { downloaders, Init } from './downloadCommand'
 import { getWatchlist } from './tmdb'
+import { router as scraper } from './scraper'
 
 const app = express()
 
@@ -16,6 +17,7 @@ app.use('/settings', settings)
 app.use('/films', films)
 app.use('/series', series)
 app.use('/logs', logs)
+app.use('/scraper', scraper)
 
 setTimeout(()=> {
   Init()
