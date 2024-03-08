@@ -178,7 +178,7 @@ router.get('/download/:id/scrape', async (req, res) => {
     })
   } else if (stream?.type == 'hls' && stream?.playlist) {
     const manifest = await (await axios.get(stream?.playlist)).data
-    qualities = parseHlsQuality(manifest)
+    qualities = parseHlsQuality(manifest, stream?.playlist)
   }
 
   res.render('pages/qualityChooser', {
@@ -250,7 +250,7 @@ router.post('/download/:id', (req, res) => {
         const manifest = await axios.get(link.src.stream.playlist, {
           responseType: 'text'
         }).then(res => res.data)
-        const parsed = parseHlsQuality(manifest)
+        const parsed = parseHlsQuality(manifest, link.src.stream.playlist);
         src = parsed[req.body.quality as Qualities]  
         if(!src) {
           src = parsed[(Object.keys(parsed) as Qualities[]).sort(compareQualities)[0]]
@@ -260,7 +260,8 @@ router.post('/download/:id', (req, res) => {
       if(!src) {
         throw new Error(`no media found for quality ${req.body.quality}`)
       }
-
+      
+      console.log(src);
       const cmd = new DownloadCommand(src, await db.getSaveLocation('series') + '/' + dirName, fileName, ()=> {
         return
       }, captions, link.src.stream.type)

@@ -61,7 +61,17 @@ export const downloaders: Record<number, DownloadCommand> = {}
 
 export default class DownloadCommand {
     downloader: Downloader | undefined
-    scrapeArgs: showscrapeArgs | filmscrapeArgs | undefined
+    _scrapeArgs: showscrapeArgs | filmscrapeArgs | undefined
+
+    get scrapeArgs() {
+        return this._scrapeArgs
+    }
+
+    set scrapeArgs(val: showscrapeArgs | filmscrapeArgs | undefined) {
+        this._scrapeArgs = val
+        db.updateDownloadById(this.id, this.toJSON('scheduled'));
+    }
+
     constructor(private videoURL: string, private dest: string, private name: string, private cb: (success: boolean) => void, captionURLs: Record<string, string>, private type: DownloadType, private id: number = -1) {
         if(!fs.existsSync(dest)) fs.mkdirSync(dest, {recursive: true, mode: 0o777})
         if(this.id == -1) {
@@ -109,7 +119,8 @@ export default class DownloadCommand {
                 })
             }).then(() => {
                 db.updateDownloadById(this.id, this.toJSON('complete'))
-            }).catch(() => {
+            }).catch((err) => {
+                Logger.error(err);
                 this.reScrape().catch(err=> {
                     db.updateDownloadById(this.id, {...this.toJSON('error'), error: new Error('Error during re-scrape: ' + err) });
                     Logger.error(err);
@@ -161,7 +172,7 @@ export default class DownloadCommand {
             } else if(stream.type == 'hls') {
                 const playlist = await axios.get(stream.playlist, {responseType: 'text'}).catch(() => {throw new Error('Failed to get playlist')})
                 if(!playlist.data) throw new Error('Failed to get playlist')
-                const qualities = parseHlsQuality(playlist.data)
+                const qualities = parseHlsQuality(playlist.data, stream.playlist)
                 const quality = qualities[this.scrapeArgs.quality]
                 if (!quality) throw new Error('No source found for quality ' + this.scrapeArgs.quality);
                 this.videoURL = quality

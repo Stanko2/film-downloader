@@ -37,26 +37,35 @@ export function humanFileSize(bytes: number, si=false, dp=1) {
     return bytes.toFixed(dp) + ' ' + units[u];
   }
   
-export function parseHlsQuality(file: string): Partial<Record<Qualities, string>> {
+export function parseHlsQuality(file: string, url: string): Partial<Record<Qualities, string>> {
   const lines = file.split('\n')
   const out: Partial<Record<Qualities, string>> = {}
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     if(line.startsWith('#EXT-X-STREAM-INF')){
       if(line.match('1080'))
-        out['1080'] = lines[i+1]
+        out['1080'] = getUrl(lines[i+1], url);
       else if(line.match('720'))
-        out['720'] = lines[i+1]
+        out['720'] = getUrl(lines[i+1], url)
       else if(line.match('480'))
-        out['480'] = lines[i+1]
+        out['480'] = getUrl(lines[i+1], url)
       else if(line.match('2160'))
-        out['4k'] = lines[i+1]
+        out['4k'] = getUrl(lines[i+1], url)
       else if(line.match('360'))
-        out['360'] = lines[i+1]
+        out['360'] = getUrl(lines[i+1], url)
     }
   }
-
+  console.log(out);
+  
   return out
+}
+
+export function getUrl(row: string, url: string) {
+  if(row.startsWith('http')) {
+    return row
+  }
+  const stripped = url.split('/').slice(0, -1).join('/');
+  return stripped + '/' + row
 }
 
 export function compareQualities(a: Qualities, b: Qualities): number {

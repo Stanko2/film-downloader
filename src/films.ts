@@ -171,7 +171,7 @@ router.get('/download/:id/scrape', async (req, res) => {
     const playlistRes = await axios.get(stream.playlist, {responseType: 'text'}).catch(() => null)
     if((playlistRes?.status || 404) < 300) {
       const playlist = playlistRes?.data
-      qualities = parseHlsQuality(playlist)
+      qualities = parseHlsQuality(playlist, stream.playlist)
     }
   }
   
