@@ -42,9 +42,9 @@ router.get('/:id/streams', async (req,res) => {
   const shows = await getAllShows()
   const location = await db.getSaveLocation('series')
   const showName = shows[parseInt(req.params.id) - 1]
-  const streamNames = fs.readdirSync(path.join(location, showName)).filter(x=> IsVideo(x))
+  const streamNames = fs.readdirSync(path.join(location, showName)).filter(x=> IsVideo(x)).sort()
   const streams: any[] = []
-  const details = await getShowDetails(showName) || null
+  const details = await getShowDetails(showName) || null  
   for (const stream of streamNames) {
     const p = path.join(location, showName, stream)
     const data = await getStreamMetadata(p, stream).catch((err)=> {
@@ -82,7 +82,7 @@ router.get('/:id/watch/:streamId/file', async (req,res) => {
   const shows = await getAllShows()
   try {
     const showName = shows[parseInt(req.params.id) - 1]
-    const stream = fs.readdirSync(path.join(await db.getSaveLocation('series'), showName)).filter(x=> IsVideo(x))[parseInt(req.params.streamId)];
+    const stream = fs.readdirSync(path.join(await db.getSaveLocation('series'), showName)).filter(x=> IsVideo(x)).sort()[parseInt(req.params.streamId)];
     res.sendFile(path.join(await db.getSaveLocation('series'), showName, stream))
   } catch (error) {
     res.render('error', {error})

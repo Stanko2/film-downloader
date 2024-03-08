@@ -118,7 +118,7 @@ export async function addEpisode(id: string, filePath: string, fileExt: string, 
   Logger.log('Importing file to ' + folder);
   
   return new Promise<void>((resolve, reject) => {
-    fs.copyFile(filePath, path.join(folder, name + getEpisodeName(season, episode) + fileExt), (err) => {
+    fs.copyFile(filePath, path.join(folder, name + ' ' + getEpisodeName(season, episode) + fileExt), (err) => {
       if(err) reject(err)
       fs.rm(filePath, (err)=>{
         if(err) reject(err)
