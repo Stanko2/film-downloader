@@ -48,6 +48,7 @@ export async function Init() {
     }
     const downloads = await db.getAllDownloads()
     for (const download of downloads) {
+        if(download.id == -1) continue;
         // eslint-disable-next-line @typescript-eslint/no-empty-function
         const cmd = new DownloadCommand(download.url, download.dest, download.name, ()=>{}, {}, download.type, download.id)
         if(download.scrapeArgs){
@@ -77,6 +78,7 @@ export default class DownloadCommand {
         if(this.id == -1) {
             db.addDownloadCommand(this.toJSON('scheduled')).then(id => {
                 this.id = id
+                console.log('New Download: ' + id)
                 this.init()
             });
         }
@@ -85,7 +87,7 @@ export default class DownloadCommand {
 
     }
 
-    init() {
+    init() { 
         try {
             const filepath = join(this.dest, this.name + extname(this.videoURL.split('?')[0]))
             if(this.type == 'hls'){
@@ -107,6 +109,7 @@ export default class DownloadCommand {
             db.updateDownloadById(this.id, {...this.toJSON('error'), error: 'Failed to complete download after 5 retries'})
             return false
         }
+        console.log("starting download "+ this.id);
         if(!this.downloader) return false
         const state = (await db.getDownloadById(this.id)).state
         if(state === 'scheduled'){
@@ -121,14 +124,15 @@ export default class DownloadCommand {
                 db.updateDownloadById(this.id, this.toJSON('complete'))
             }).catch((err) => {
                 Logger.error(err);
-                this.reScrape().catch(err=> {
-                    db.updateDownloadById(this.id, {...this.toJSON('error'), error: new Error('Error during re-scrape: ' + err) });
-                    Logger.error(err);
-                }).then(() => {
+                this.reScrape().then(() => {
+                    Logger.log("Re-scrape successfull");
                     this.init();
                     setTimeout(() => {
                         this.startDownload(retries + 1)
                     }, 100);
+                }).catch(err=> {
+                    db.updateDownloadById(this.id, {...this.toJSON('error'), error: new Error('Error during re-scrape: ' + err) });
+                    Logger.error(err);
                 })
             })
         }

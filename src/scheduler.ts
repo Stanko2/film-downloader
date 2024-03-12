@@ -24,7 +24,9 @@ class Scheduler {
     
     async run(_r: Date | 'manual' | 'init') {
         if(Downloader.busy) return
+
         const download = (await db.getAllDownloads()).sort((a,b)=> a.id - b.id).filter(d => d.state == 'scheduled')[0]
+        console.log("Running scheduler " + download.id);
         if(!download) return
         downloaders[download.id].startDownload()
     }

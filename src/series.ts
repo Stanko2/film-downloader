@@ -232,10 +232,11 @@ router.post('/download/:id', (req, res) => {
     })) {
       const dirName = `${data.name} (${getYear(data.first_air_date)})`
       const fileName = `${dirName} ${getEpisodeName(link.season, link.episode)}`
-      
+      console.log(dirName);
       if (fs.existsSync(await db.getSaveLocation('series') + '/' + dirName + '/' + fileName + '.mp4')) continue
       const captions:Record<string, string> = {}
       let src: string | undefined
+
       for (const caption of link.src.stream.captions || []) {
         if((req.body.caption?.split('$$$')[0] || []).includes(caption.language)){
           captions[caption.language] = caption.url
@@ -247,6 +248,7 @@ router.post('/download/:id', (req, res) => {
           src = link.src.stream.qualities[(Object.keys(link.src.stream.qualities) as Qualities[]).sort(compareQualities)[0]]?.url
         }
       } else {
+        console.log(link.src.stream.playlist);
         const manifest = await axios.get(link.src.stream.playlist, {
           responseType: 'text'
         }).then(res => res.data)
@@ -260,8 +262,7 @@ router.post('/download/:id', (req, res) => {
       if(!src) {
         throw new Error(`no media found for quality ${req.body.quality}`)
       }
-      
-      console.log(src);
+
       const cmd = new DownloadCommand(src, await db.getSaveLocation('series') + '/' + dirName, fileName, ()=> {
         return
       }, captions, link.src.stream.type)
@@ -275,7 +276,7 @@ router.post('/download/:id', (req, res) => {
         episode: link.episode
       }
     }
-  })
+  }).catch(err=> console.log(err))
 })
 
 export default router

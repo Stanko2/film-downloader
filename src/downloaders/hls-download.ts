@@ -36,7 +36,9 @@ export default class HlsDownloader extends Downloader  {
     override async startDownload(progressCallback: (progress: DownloadProgress) => void): Promise<void> {
         const file = this.filename.split('/').pop() || ''
         const dir = this.filename.split('/').slice(0, -1).join('/')
-        const segments = await this.getSegments(this.url)
+        const segments = await this.getSegments(this.url).catch(err => {
+            throw err
+        });
         const baseUrl = this.url.split('/').slice(0, -1).join('/')
 
         let done = 0
@@ -125,13 +127,16 @@ export default class HlsDownloader extends Downloader  {
     }
 
     async mergeSegments(dest: string, name: string, paths: string[]) {
-
-        const stream = createWriteStream(name + '.mp4')
+        name = name.replaceAll(':', '');
+        const stream = createWriteStream(name.replaceAll(':', '') + '.mp4')
         for (const file of paths) {
-            await this.fileToStream(file, stream)
+            await this.fileToStream(file, stream).catch(err => {
+                throw err
+            })
         }
         return new Promise<void>((resolve, reject) => {
-            stream.end(() => {
+            stream.end(() => {  
+                if(!existsSync(name + '.mp4')) reject('Failed to merge segments');
                 ffprobe(name + '.mp4', async (err, data) => {
                     if(err) reject(err)
                     const include: string[] = []
