@@ -70,7 +70,11 @@ export default class DownloadCommand {
 
     set scrapeArgs(val: showscrapeArgs | filmscrapeArgs | undefined) {
         this._scrapeArgs = val
-        db.updateDownloadById(this.id, this.toJSON('scheduled'));
+        if(this.id != -1)
+            db.updateDownloadById(this.id, this.toJSON('scheduled'));
+        else setTimeout(()=> {
+            db.updateDownloadById(this.id, this.toJSON('scheduled'));
+        }, 500)
     }
 
     constructor(private videoURL: string, private dest: string, private name: string, private cb: (success: boolean) => void, captionURLs: Record<string, string>, private type: DownloadType, private id: number = -1) {
