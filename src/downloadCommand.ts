@@ -6,8 +6,8 @@ import FileDownloader from "./downloaders/file-download";
 import HlsDownloader from "./downloaders/hls-download";
 import axios from 'axios';
 import MovieDB from 'node-themoviedb';
-import { Qualities } from '@movie-web/providers';
-import { ScrapeMovie } from './scraper';
+import { Qualities, RunOutput, Stream } from '@movie-web/providers';
+import { ScrapeMovie, scrapeEpisode } from './scraper';
 import { parseHlsQuality } from './util';
 import { Logger } from './logger';
 
@@ -113,7 +113,6 @@ export default class DownloadCommand {
             db.updateDownloadById(this.id, {...this.toJSON('error'), error: 'Failed to complete download after 5 retries'})
             return false
         }
-        console.log("starting download "+ this.id);
         if(!this.downloader) return false
         const state = (await db.getDownloadById(this.id)).state
         if(state === 'scheduled'){
@@ -169,25 +168,27 @@ export default class DownloadCommand {
 
     async reScrape(){
         if(!this.scrapeArgs) throw new Error('No scrapeArgs');
+        let source: RunOutput | null;
         if(this.scrapeArgs.type == 'movie') {
-            const source = await ScrapeMovie(this.scrapeArgs.data, this.scrapeArgs.source)
-            if (!source) throw new Error('No source found');
-            const stream = source.stream
-            if(stream.type == 'file'){
-                const src = stream.qualities[this.scrapeArgs.quality]
-                if (!src) throw new Error('No source found for quality ' + this.scrapeArgs.quality);
-                this.videoURL = src.url
-            } else if(stream.type == 'hls') {
-                const playlist = await axios.get(stream.playlist, {responseType: 'text'}).catch(() => {throw new Error('Failed to get playlist')})
-                if(!playlist.data) throw new Error('Failed to get playlist')
-                const qualities = parseHlsQuality(playlist.data, stream.playlist)
-                const quality = qualities[this.scrapeArgs.quality]
-                if (!quality) throw new Error('No source found for quality ' + this.scrapeArgs.quality);
-                this.videoURL = quality
-            }
-            db.updateDownloadById(this.id, this.toJSON('scheduled'))
-        } 
+            source = await ScrapeMovie(this.scrapeArgs.data, this.scrapeArgs.source)
+            if(!source) throw new Error("Source " + this.scrapeArgs.source + " hasn't got movie " + this.scrapeArgs.data.title);
+            
+        } else {
+            source = await scrapeEpisode(this.scrapeArgs.data, this.scrapeArgs.season, this.scrapeArgs.episode, this.scrapeArgs.source);
+            if(!source) throw new Error("Source " + this.scrapeArgs.source + " hasn't got episode " + this.scrapeArgs.episode);
+        }
+        const stream = source.stream;
+        if(stream.type == 'file'){
+            const src = stream.qualities[this.scrapeArgs.quality]
+            if (!src) throw new Error('No source found for quality ' + this.scrapeArgs.quality);
+            this.videoURL = src.url
+        } else if(stream.type == 'hls') {
+            const playlist = await axios.get(stream.playlist, {responseType: 'text'}).catch(() => {throw new Error('Failed to get playlist')})
+            if(!playlist.data) throw new Error('Failed to get playlist')
+            const qualities = parseHlsQuality(playlist.data, stream.playlist)
+            const quality = qualities[this.scrapeArgs.quality]
+            if (!quality) throw new Error('No source found for quality ' + this.scrapeArgs.quality);
+            this.videoURL = quality
+        }
     }
-
 }
-
