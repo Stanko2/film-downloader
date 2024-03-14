@@ -48,6 +48,8 @@ export default class FileDownloader extends Downloader {
         }).catch((err) => {
             throw new Error(err);
         })
+        if(res.status >= 400)
+            throw new Error("Request failed with status " + res.status);
 
         this.downloadStream = fs.createWriteStream(this.filename, {mode: 0o777, flags: 'a'})
         res.data.pipe(this.downloadStream)

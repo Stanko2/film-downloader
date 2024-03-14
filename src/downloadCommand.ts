@@ -127,6 +127,7 @@ export default class DownloadCommand {
                 db.updateDownloadById(this.id, this.toJSON('complete'))
             }).catch((err) => {
                 Logger.error(err);
+                db.updateDownloadById(this.id, this.toJSON('scheduled'));
                 this.reScrape().then(() => {
                     Logger.log("Re-scrape successfull");
                     this.init();
