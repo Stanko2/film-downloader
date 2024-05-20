@@ -5,7 +5,7 @@ import DownloadCommand from './downloadCommand'
 import path from 'path'
 import { IsVideo, parseHlsQuality, getStreamMetadata, parseSeasonEpisode, compareQualities } from './util'
 import { getSeasonDetails, getTvShowFromID, init, searchSeries } from './tmdb'
-import { Qualities } from '@movie-web/providers'
+import { Qualities } from './providerLib'
 import axios from 'axios'
 import { scrapeEpisode, getDownloadLinks, listSources } from './scraper'
 import { addEpisode, getAllShows, getEpisodeName, getShowDetails, getYear, reloadLibrary } from './library'
@@ -32,6 +32,7 @@ router.get('/', async (_req, res)=>{
     res.render('pages/tvShows/list', {
       films: JSON.parse(await db.client.get('Library:series') || '[]')
     })
+    return
   }
   res.render('pages/tvShows/list', {
     films: data

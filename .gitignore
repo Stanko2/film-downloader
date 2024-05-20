@@ -3,3 +3,4 @@ lib/*
 ./docker-compose.yml
 docker-compose.yml
 uploads/*
+providers/
