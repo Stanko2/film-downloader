@@ -179,7 +179,7 @@ router.get('/download/:id/scrape', async (req, res) => {
     })
   } else if (stream?.type == 'hls' && stream?.playlist) {
     const manifest = await (await axios.get(stream?.playlist)).data
-    qualities = parseHlsQuality(manifest, stream?.playlist)
+    qualities = parseHlsQuality(manifest, stream?.playlist) as Record<string, string>
   }
 
   res.render('pages/qualityChooser', {

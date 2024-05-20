@@ -1,4 +1,4 @@
-import { Qualities } from "@movie-web/providers";
+import { Qualities } from "./providerLib";
 import { ffprobe } from "fluent-ffmpeg";
 import db from "./db";
 

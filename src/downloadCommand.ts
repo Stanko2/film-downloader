@@ -6,7 +6,7 @@ import FileDownloader from "./downloaders/file-download";
 import HlsDownloader from "./downloaders/hls-download";
 import axios from 'axios';
 import MovieDB from 'node-themoviedb';
-import { Qualities, RunOutput } from '@movie-web/providers';
+import { Qualities, RunOutput } from './providerLib';
 import { ScrapeMovie, scrapeEpisode } from './scraper';
 import { parseHlsQuality } from './util';
 import { Logger } from './logger';
