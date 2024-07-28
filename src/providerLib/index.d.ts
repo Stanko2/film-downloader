@@ -5,6 +5,7 @@ export declare function buildProviders(): ProviderBuilder;
 declare type Caption = {
     type: CaptionType;
     id: string;
+    opensubtitles?: boolean;
     url: string;
     hasCorsRestrictions: boolean;
     language: string;
@@ -31,6 +32,7 @@ export declare type DefaultedFetcherOptions = {
     query: Record<string, string>;
     readHeaders: string[];
     method: 'HEAD' | 'GET' | 'POST';
+    credentials?: 'include' | 'same-origin' | 'omit';
 };
 
 declare type DiscoverEmbedsEvent = {
@@ -82,6 +84,7 @@ export declare type FetcherOptions = {
     method?: 'HEAD' | 'GET' | 'POST';
     readHeaders?: string[];
     body?: Record<string, any> | string | FormData_2 | URLSearchParams;
+    credentials?: 'include' | 'same-origin' | 'omit';
 };
 
 export declare type FetcherResponse<T = any> = {
@@ -106,6 +109,7 @@ declare type FetchOps = {
     headers: Record<string, string>;
     method: string;
     body: any;
+    credentials?: 'include' | 'same-origin' | 'omit';
 };
 
 declare type FetchReply = {
@@ -129,6 +133,7 @@ export declare const flags: {
     readonly CORS_ALLOWED: "cors-allowed";
     readonly IP_LOCKED: "ip-locked";
     readonly CF_BLOCKED: "cf-blocked";
+    readonly PROXY_BLOCKED: "proxy-blocked";
 };
 
 export declare type FullScraperEvents = {
@@ -145,6 +150,7 @@ export declare function getBuiltinSources(): Sourcerer[];
 export declare type HlsBasedStream = StreamCommon & {
     type: 'hls';
     playlist: string;
+    proxyDepth?: 0 | 1 | 2;
 };
 
 declare type IndividualScraperEvents = {
@@ -212,6 +218,7 @@ export declare interface ProviderMakerOptions {
     proxiedFetcher?: Fetcher;
     target: Targets;
     consistentIpForRequests?: boolean;
+    proxyStreams?: boolean;
 }
 
 export declare type Qualities = 'unknown' | '360' | '480' | '720' | '1080' | '4k';

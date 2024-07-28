@@ -1,7 +1,7 @@
+import ISO6391 from "iso-639-1";
 import { customAlphabet } from "nanoid";
 import * as unpacker from "unpacker";
 import { unpack } from "unpacker";
-import ISO6391 from "iso-639-1";
 import CryptoJS from "crypto-js";
 import { load } from "cheerio";
 import FormData from "form-data";
@@ -15,10 +15,8 @@ class NotFoundError extends Error {
 }
 function formatSourceMeta(v) {
   const types = [];
-  if (v.scrapeMovie)
-    types.push("movie");
-  if (v.scrapeShow)
-    types.push("show");
+  if (v.scrapeMovie) types.push("movie");
+  if (v.scrapeShow) types.push("show");
   return {
     type: "source",
     id: v.id,
@@ -55,12 +53,10 @@ function getSpecificId(list, id) {
 function makeFullUrl(url, ops) {
   let leftSide = (ops == null ? void 0 : ops.baseUrl) ?? "";
   let rightSide = url;
-  if (leftSide.length > 0 && !leftSide.endsWith("/"))
-    leftSide += "/";
-  if (rightSide.startsWith("/"))
-    rightSide = rightSide.slice(1);
+  if (leftSide.length > 0 && !leftSide.endsWith("/")) leftSide += "/";
+  if (rightSide.startsWith("/")) rightSide = rightSide.slice(1);
   const fullUrl = leftSide + rightSide;
-  if (!fullUrl.startsWith("http://") && !fullUrl.startsWith("https://"))
+  if (!fullUrl.startsWith("http://") && !fullUrl.startsWith("https://") && !fullUrl.startsWith("data:"))
     throw new Error(`Invald URL -- URL doesn't start with a http scheme: '${fullUrl}'`);
   const parsedUrl = new URL(fullUrl);
   Object.entries((ops == null ? void 0 : ops.query) ?? {}).forEach(([k, v]) => {
@@ -76,7 +72,8 @@ function makeFetcher(fetcher) {
       query: (ops == null ? void 0 : ops.query) ?? {},
       baseUrl: (ops == null ? void 0 : ops.baseUrl) ?? "",
       readHeaders: (ops == null ? void 0 : ops.readHeaders) ?? [],
-      body: ops == null ? void 0 : ops.body
+      body: ops == null ? void 0 : ops.body,
+      credentials: ops == null ? void 0 : ops.credentials
     });
   };
   const output = async (url, ops) => (await newFetcher(url, ops)).body;
@@ -91,7 +88,10 @@ const flags = {
   IP_LOCKED: "ip-locked",
   // The source/embed is blocking cloudflare ip's
   // This flag is not compatible with a proxy hosted on cloudflare
-  CF_BLOCKED: "cf-blocked"
+  CF_BLOCKED: "cf-blocked",
+  // Streams and sources with this flag wont be proxied
+  // And will be exclusive to the extension
+  PROXY_BLOCKED: "proxy-blocked"
 };
 const targets = {
   // browser with CORS restrictions
@@ -121,27 +121,112 @@ const targetToFeatures = {
     disallowed: []
   }
 };
-function getTargetFeatures(target, consistentIpForRequests) {
+function getTargetFeatures(target, consistentIpForRequests, proxyStreams) {
   const features = targetToFeatures[target];
-  if (!consistentIpForRequests)
-    features.disallowed.push(flags.IP_LOCKED);
+  if (!consistentIpForRequests) features.disallowed.push(flags.IP_LOCKED);
+  if (proxyStreams) features.disallowed.push(flags.PROXY_BLOCKED);
   return features;
 }
 function flagsAllowedInFeatures(features, inputFlags) {
   const hasAllFlags = features.requires.every((v) => inputFlags.includes(v));
-  if (!hasAllFlags)
-    return false;
+  if (!hasAllFlags) return false;
   const hasDisallowedFlag = features.disallowed.some((v) => inputFlags.includes(v));
-  if (hasDisallowedFlag)
-    return false;
+  if (hasDisallowedFlag) return false;
   return true;
+}
+const captionTypes = {
+  srt: "srt",
+  vtt: "vtt"
+};
+function getCaptionTypeFromUrl(url) {
+  const extensions = Object.keys(captionTypes);
+  const type = extensions.find((v) => url.endsWith(`.${v}`));
+  if (!type) return null;
+  return type;
+}
+function labelToLanguageCode(label) {
+  const code = ISO6391.getCode(label);
+  if (code.length === 0) return null;
+  return code;
+}
+function isValidLanguageCode(code) {
+  if (!code) return false;
+  return ISO6391.validate(code);
+}
+function removeDuplicatedLanguages(list) {
+  const beenSeen = {};
+  return list.filter((sub) => {
+    if (beenSeen[sub.language]) return false;
+    beenSeen[sub.language] = true;
+    return true;
+  });
+}
+async function addOpenSubtitlesCaptions(captions, ops, media) {
+  try {
+    const [imdbId, season, episode] = atob(media).split(".").map((x, i) => i === 0 ? x : Number(x) || null);
+    if (!imdbId) return captions;
+    const Res = await ops.proxiedFetcher(
+      `https://rest.opensubtitles.org/search/${season && episode ? `episode-${episode}/` : ""}imdbid-${imdbId.slice(2)}${season && episode ? `/season-${season}` : ""}`,
+      {
+        headers: {
+          "X-User-Agent": "VLSub 0.10.2"
+        }
+      }
+    );
+    const openSubtilesCaptions = [];
+    for (const caption of Res) {
+      const url = caption.SubDownloadLink.replace(".gz", "").replace("download/", "download/subencoding-utf8/");
+      const language = labelToLanguageCode(caption.LanguageName);
+      if (!url || !language) continue;
+      else
+        openSubtilesCaptions.push({
+          id: url,
+          opensubtitles: true,
+          url,
+          type: caption.SubFormat || "srt",
+          hasCorsRestrictions: false,
+          language
+        });
+    }
+    return [...captions, ...removeDuplicatedLanguages(openSubtilesCaptions)];
+  } catch {
+    return captions;
+  }
+}
+function requiresProxy(stream) {
+  if (!stream.flags.includes(flags.CORS_ALLOWED) && !!(stream.headers && Object.keys(stream.headers).length > 0))
+    return true;
+  return false;
+}
+function setupProxy(stream) {
+  const headers = stream.headers && Object.keys(stream.headers).length > 0 ? stream.headers : void 0;
+  const options = {
+    ...stream.type === "hls" && { depth: stream.proxyDepth ?? 0 }
+  };
+  const payload = {
+    headers,
+    options
+  };
+  if (stream.type === "hls") {
+    payload.type = "hls";
+    payload.url = stream.playlist;
+    stream.playlist = `https://proxy.nsbx.ru/proxy?${new URLSearchParams({ payload: Buffer.from(JSON.stringify(payload)).toString("base64url") })}`;
+  }
+  if (stream.type === "file") {
+    payload.type = "mp4";
+    Object.entries(stream.qualities).forEach((entry) => {
+      payload.url = entry[1].url;
+      entry[1].url = `https://proxy.nsbx.ru/proxy?${new URLSearchParams({ payload: Buffer.from(JSON.stringify(payload)).toString("base64url") })}`;
+    });
+  }
+  stream.headers = {};
+  stream.flags = [flags.CORS_ALLOWED];
+  return stream;
 }
 function makeSourcerer(state) {
   const mediaTypes = [];
-  if (state.scrapeMovie)
-    mediaTypes.push("movie");
-  if (state.scrapeShow)
-    mediaTypes.push("show");
+  if (state.scrapeMovie) mediaTypes.push("movie");
+  if (state.scrapeShow) mediaTypes.push("show");
   return {
     ...state,
     type: "source",
@@ -157,6 +242,49 @@ function makeEmbed(state) {
     mediaTypes: void 0
   };
 }
+const providers$2 = [
+  {
+    id: "delta",
+    rank: 699
+  },
+  {
+    id: "alpha",
+    rank: 695
+  }
+];
+function embed$2(provider) {
+  return makeEmbed({
+    id: provider.id,
+    name: provider.id.charAt(0).toUpperCase() + provider.id.slice(1),
+    rank: provider.rank,
+    disabled: false,
+    async scrape(ctx) {
+      const [query, baseUrl3] = ctx.url.split("|");
+      const search2 = await ctx.fetcher.full("/search", {
+        query: {
+          query,
+          provider: provider.id
+        },
+        credentials: "include",
+        baseUrl: baseUrl3
+      });
+      if (search2.statusCode === 429) throw new Error("Rate limited");
+      if (search2.statusCode !== 200) throw new NotFoundError("Failed to search");
+      ctx.progress(50);
+      const result = await ctx.fetcher("/provider", {
+        query: {
+          resourceId: search2.body.url,
+          provider: provider.id
+        },
+        credentials: "include",
+        baseUrl: baseUrl3
+      });
+      ctx.progress(100);
+      return result;
+    }
+  });
+}
+const [deltaScraper, alphaScraper] = providers$2.map(embed$2);
 const warezcdnBase = "https://embed.warezcdn.com";
 const warezcdnApiBase = "https://warezcdn.com/embed";
 const warezcdnPlayerBase = "https://warezcdn.com/player";
@@ -174,11 +302,10 @@ async function getExternalPlayerUrl(ctx, embedId, embedUrl) {
     query: params
   });
   const realEmbedUrl = realUrl.match(/window\.location\.href="([^"]*)";/);
-  if (!realEmbedUrl)
-    throw new Error("Could not find embed url");
+  if (!realEmbedUrl) throw new Error("Could not find embed url");
   return realEmbedUrl[1];
 }
-function decrypt(input) {
+function decrypt$1(input) {
   let output = atob(input);
   output = output.trim();
   output = output.split("").reverse().join("");
@@ -202,8 +329,7 @@ async function getDecryptedId(ctx) {
     }
   });
   const allowanceKey = (_a = page.match(/let allowanceKey = "(.*?)";/)) == null ? void 0 : _a[1];
-  if (!allowanceKey)
-    throw new NotFoundError("Failed to get allowanceKey");
+  if (!allowanceKey) throw new NotFoundError("Failed to get allowanceKey");
   const streamData = await ctx.proxiedFetcher("/functions.php", {
     baseUrl: warezcdnPlayerBase,
     method: "POST",
@@ -213,11 +339,9 @@ async function getDecryptedId(ctx) {
     })
   });
   const stream = JSON.parse(streamData);
-  if (!stream.id)
-    throw new NotFoundError("can't get stream id");
-  const decryptedId = decrypt(stream.id);
-  if (!decryptedId)
-    throw new NotFoundError("can't get file id");
+  if (!stream.id) throw new NotFoundError("can't get stream id");
+  const decryptedId = decrypt$1(stream.id);
+  if (!decryptedId) throw new NotFoundError("can't get file id");
   return decryptedId;
 }
 const cdnListing = [50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64];
@@ -230,8 +354,7 @@ async function checkUrls(ctx, fileId) {
         Range: "bytes=0-1"
       }
     });
-    if (response.statusCode === 206)
-      return url;
+    if (response.statusCode === 206) return url;
   }
   return null;
 }
@@ -243,11 +366,9 @@ const warezcdnembedMp4Scraper = makeEmbed({
   disabled: false,
   async scrape(ctx) {
     const decryptedId = await getDecryptedId(ctx);
-    if (!decryptedId)
-      throw new NotFoundError("can't get file id");
+    if (!decryptedId) throw new NotFoundError("can't get file id");
     const streamUrl = await checkUrls(ctx, decryptedId);
-    if (!streamUrl)
-      throw new NotFoundError("can't get stream id");
+    if (!streamUrl) throw new NotFoundError("can't get stream id");
     return {
       stream: [
         {
@@ -268,27 +389,107 @@ const warezcdnembedMp4Scraper = makeEmbed({
     };
   }
 });
-const SKIP_VALIDATION_CHECK_IDS = [warezcdnembedMp4Scraper.id];
+const baseUrl$b = "https://api.whvx.net";
+async function comboScraper$7(ctx) {
+  var _a;
+  const query = {
+    title: ctx.media.title,
+    releaseYear: ctx.media.releaseYear,
+    tmdbId: ctx.media.tmdbId,
+    imdbId: ctx.media.imdbId,
+    type: ctx.media.type,
+    ...ctx.media.type === "show" && {
+      season: ctx.media.season.number.toString(),
+      episode: ctx.media.episode.number.toString()
+    }
+  };
+  const res = await ctx.fetcher("/status", { baseUrl: baseUrl$b });
+  if (((_a = res.providers) == null ? void 0 : _a.length) === 0) throw new NotFoundError("No providers available");
+  const embeds = res.providers.map((provider) => {
+    return {
+      embedId: provider,
+      url: JSON.stringify(query)
+    };
+  });
+  return {
+    embeds
+  };
+}
+const whvxScraper = makeSourcerer({
+  id: "whvx",
+  name: "VidBinge",
+  rank: 128,
+  flags: [flags.CORS_ALLOWED],
+  scrapeMovie: comboScraper$7,
+  scrapeShow: comboScraper$7
+});
+const providers$1 = [
+  {
+    id: "nova",
+    name: "Nova",
+    rank: 701
+  },
+  {
+    id: "astra",
+    name: "Astra",
+    rank: 700
+  }
+];
+function embed$1(provider) {
+  return makeEmbed({
+    id: provider.id,
+    name: provider.name,
+    rank: provider.rank,
+    disabled: false,
+    async scrape(ctx) {
+      const query = ctx.url;
+      const search2 = await ctx.fetcher.full("/search", {
+        query: {
+          query,
+          provider: provider.id
+        },
+        baseUrl: baseUrl$b
+      });
+      if (search2.statusCode === 429) throw new Error("Rate limited");
+      if (search2.statusCode !== 200) throw new NotFoundError("Failed to search");
+      ctx.progress(50);
+      const result = await ctx.fetcher("/source", {
+        query: {
+          resourceId: search2.body.url,
+          provider: provider.id
+        },
+        baseUrl: baseUrl$b
+      });
+      ctx.progress(100);
+      return result;
+    }
+  });
+}
+const [novaScraper, astraScraper] = providers$1.map(embed$1);
+const SKIP_VALIDATION_CHECK_IDS = [
+  warezcdnembedMp4Scraper.id,
+  deltaScraper.id,
+  alphaScraper.id,
+  novaScraper.id,
+  astraScraper.id
+];
 function isValidStream$1(stream) {
-  if (!stream)
-    return false;
+  if (!stream) return false;
   if (stream.type === "hls") {
-    if (!stream.playlist)
-      return false;
+    if (!stream.playlist) return false;
     return true;
   }
   if (stream.type === "file") {
     const validQualities = Object.values(stream.qualities).filter((v) => v.url.length > 0);
-    if (validQualities.length === 0)
-      return false;
+    if (validQualities.length === 0) return false;
     return true;
   }
   return false;
 }
 async function validatePlayableStream(stream, ops, sourcererId) {
-  if (SKIP_VALIDATION_CHECK_IDS.includes(sourcererId))
-    return stream;
+  if (SKIP_VALIDATION_CHECK_IDS.includes(sourcererId)) return stream;
   if (stream.type === "hls") {
+    if (stream.playlist.startsWith("data:")) return stream;
     const result = await ops.proxiedFetcher.full(stream.playlist, {
       method: "GET",
       headers: {
@@ -296,8 +497,7 @@ async function validatePlayableStream(stream, ops, sourcererId) {
         ...stream.headers
       }
     });
-    if (result.statusCode < 200 || result.statusCode >= 400)
-      return null;
+    if (result.statusCode < 200 || result.statusCode >= 400) return null;
     return stream;
   }
   if (stream.type === "file") {
@@ -319,27 +519,22 @@ async function validatePlayableStream(stream, ops, sourcererId) {
         delete validQualities[quality];
       }
     });
-    if (Object.keys(validQualities).length === 0)
-      return null;
+    if (Object.keys(validQualities).length === 0) return null;
     return { ...stream, qualities: validQualities };
   }
   return null;
 }
 async function validatePlayableStreams(streams, ops, sourcererId) {
-  if (SKIP_VALIDATION_CHECK_IDS.includes(sourcererId))
-    return streams;
+  if (SKIP_VALIDATION_CHECK_IDS.includes(sourcererId)) return streams;
   return (await Promise.all(streams.map((stream) => validatePlayableStream(stream, ops, sourcererId)))).filter(
     (v) => v !== null
   );
 }
 async function scrapeInvidualSource(list, ops) {
   const sourceScraper = list.sources.find((v) => ops.id === v.id);
-  if (!sourceScraper)
-    throw new Error("Source with ID not found");
-  if (ops.media.type === "movie" && !sourceScraper.scrapeMovie)
-    throw new Error("Source is not compatible with movies");
-  if (ops.media.type === "show" && !sourceScraper.scrapeShow)
-    throw new Error("Source is not compatible with shows");
+  if (!sourceScraper) throw new Error("Source with ID not found");
+  if (ops.media.type === "movie" && !sourceScraper.scrapeMovie) throw new Error("Source is not compatible with movies");
+  if (ops.media.type === "show" && !sourceScraper.scrapeShow) throw new Error("Source is not compatible with shows");
   const contextBase = {
     fetcher: ops.fetcher,
     proxiedFetcher: ops.proxiedFetcher,
@@ -365,33 +560,48 @@ async function scrapeInvidualSource(list, ops) {
     });
   if (output == null ? void 0 : output.stream) {
     output.stream = output.stream.filter((stream) => isValidStream$1(stream)).filter((stream) => flagsAllowedInFeatures(ops.features, stream.flags));
+    output.stream = output.stream.map(
+      (stream) => requiresProxy(stream) && ops.proxyStreams ? setupProxy(stream) : stream
+    );
   }
-  if (!output)
-    throw new Error("output is null");
-  output.embeds = output.embeds.filter((embed) => {
-    const e = list.embeds.find((v) => v.id === embed.embedId);
-    if (!e || e.disabled)
-      return false;
+  if (!output) throw new Error("output is null");
+  output.embeds = output.embeds.filter((embed2) => {
+    const e = list.embeds.find((v) => v.id === embed2.embedId);
+    if (!e || e.disabled) return false;
     return true;
   });
+  for (const embed2 of output.embeds)
+    embed2.url = `${embed2.url}${btoa("MEDIA=")}${btoa(
+      `${ops.media.imdbId}${ops.media.type === "show" ? `.${ops.media.season.number}.${ops.media.episode.number}` : ""}`
+    )}`;
   if ((!output.stream || output.stream.length === 0) && output.embeds.length === 0)
     throw new NotFoundError("No streams found");
   if (output.stream && output.stream.length > 0 && output.embeds.length === 0) {
     const playableStreams = await validatePlayableStreams(output.stream, ops, sourceScraper.id);
-    if (playableStreams.length === 0)
-      throw new NotFoundError("No playable streams found");
+    if (playableStreams.length === 0) throw new NotFoundError("No playable streams found");
+    for (const playableStream of playableStreams) {
+      playableStream.captions = await addOpenSubtitlesCaptions(
+        playableStream.captions,
+        ops,
+        btoa(
+          `${ops.media.imdbId}${ops.media.type === "show" ? `.${ops.media.season.number}.${ops.media.episode.number}` : ""}`
+        )
+      );
+    }
     output.stream = playableStreams;
   }
   return output;
 }
 async function scrapeIndividualEmbed(list, ops) {
   const embedScraper = list.embeds.find((v) => ops.id === v.id);
-  if (!embedScraper)
-    throw new Error("Embed with ID not found");
+  if (!embedScraper) throw new Error("Embed with ID not found");
+  let url = ops.url;
+  let media;
+  if (ops.url.includes(btoa("MEDIA="))) [url, media] = url.split(btoa("MEDIA="));
   const output = await embedScraper.scrape({
     fetcher: ops.fetcher,
     proxiedFetcher: ops.proxiedFetcher,
-    url: ops.url,
+    url,
     progress(val) {
       var _a, _b;
       (_b = (_a = ops.events) == null ? void 0 : _a.update) == null ? void 0 : _b.call(_a, {
@@ -402,11 +612,15 @@ async function scrapeIndividualEmbed(list, ops) {
     }
   });
   output.stream = output.stream.filter((stream) => isValidStream$1(stream)).filter((stream) => flagsAllowedInFeatures(ops.features, stream.flags));
-  if (output.stream.length === 0)
-    throw new NotFoundError("No streams found");
+  if (output.stream.length === 0) throw new NotFoundError("No streams found");
+  output.stream = output.stream.map(
+    (stream) => requiresProxy(stream) && ops.proxyStreams ? setupProxy(stream) : stream
+  );
   const playableStreams = await validatePlayableStreams(output.stream, ops, embedScraper.id);
-  if (playableStreams.length === 0)
-    throw new NotFoundError("No playable streams found");
+  if (playableStreams.length === 0) throw new NotFoundError("No playable streams found");
+  if (media)
+    for (const playableStream of playableStreams)
+      playableStream.captions = await addOpenSubtitlesCaptions(playableStream.captions, ops, media);
   output.stream = playableStreams;
   return output;
 }
@@ -415,12 +629,9 @@ function reorderOnIdList(order, list) {
   copy.sort((a, b) => {
     const aIndex = order.indexOf(a.id);
     const bIndex = order.indexOf(b.id);
-    if (aIndex >= 0 && bIndex >= 0)
-      return aIndex - bIndex;
-    if (bIndex >= 0)
-      return 1;
-    if (aIndex >= 0)
-      return -1;
+    if (aIndex >= 0 && bIndex >= 0) return aIndex - bIndex;
+    if (bIndex >= 0) return 1;
+    if (aIndex >= 0) return -1;
     return b.rank - a.rank;
   });
   return copy;
@@ -428,14 +639,12 @@ function reorderOnIdList(order, list) {
 async function runAllProviders(list, ops) {
   var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n;
   const sources = reorderOnIdList(ops.sourceOrder ?? [], list.sources).filter((source) => {
-    if (ops.media.type === "movie")
-      return !!source.scrapeMovie;
-    if (ops.media.type === "show")
-      return !!source.scrapeShow;
+    if (ops.media.type === "movie") return !!source.scrapeMovie;
+    if (ops.media.type === "show") return !!source.scrapeShow;
     return false;
   });
   const embeds = reorderOnIdList(ops.embedOrder ?? [], list.embeds);
-  const embedIds = embeds.map((embed) => embed.id);
+  const embedIds = embeds.map((embed2) => embed2.id);
   let lastId = "";
   const contextBase = {
     fetcher: ops.fetcher,
@@ -469,6 +678,9 @@ async function runAllProviders(list, ops) {
         });
       if (output) {
         output.stream = (output.stream ?? []).filter(isValidStream$1).filter((stream) => flagsAllowedInFeatures(ops.features, stream.flags));
+        output.stream = output.stream.map(
+          (stream) => requiresProxy(stream) && ops.proxyStreams ? setupProxy(stream) : stream
+        );
       }
       if (!output || !((_e = output.stream) == null ? void 0 : _e.length) && !output.embeds.length) {
         throw new NotFoundError("No streams found");
@@ -484,34 +696,38 @@ async function runAllProviders(list, ops) {
       (_g = (_f = ops.events) == null ? void 0 : _f.update) == null ? void 0 : _g.call(_f, updateParams);
       continue;
     }
-    if (!output)
-      throw new Error("Invalid media type");
+    if (!output) throw new Error("Invalid media type");
     if ((_h = output.stream) == null ? void 0 : _h[0]) {
       const playableStream = await validatePlayableStream(output.stream[0], ops, source.id);
-      if (!playableStream)
-        throw new NotFoundError("No streams found");
+      if (!playableStream) throw new NotFoundError("No streams found");
+      playableStream.captions = await addOpenSubtitlesCaptions(
+        playableStream.captions,
+        ops,
+        btoa(
+          `${ops.media.imdbId}${ops.media.type === "show" ? `.${ops.media.season.number}.${ops.media.episode.number}` : ""}`
+        )
+      );
       return {
         sourceId: source.id,
         stream: playableStream
       };
     }
-    const sortedEmbeds = output.embeds.filter((embed) => {
-      const e = list.embeds.find((v) => v.id === embed.embedId);
+    const sortedEmbeds = output.embeds.filter((embed2) => {
+      const e = list.embeds.find((v) => v.id === embed2.embedId);
       return e && !e.disabled;
     }).sort((a, b) => embedIds.indexOf(a.embedId) - embedIds.indexOf(b.embedId));
     if (sortedEmbeds.length > 0) {
       (_j = (_i = ops.events) == null ? void 0 : _i.discoverEmbeds) == null ? void 0 : _j.call(_i, {
-        embeds: sortedEmbeds.map((embed, i) => ({
+        embeds: sortedEmbeds.map((embed2, i) => ({
           id: [source.id, i].join("-"),
-          embedScraperId: embed.embedId
+          embedScraperId: embed2.embedId
         })),
         sourceId: source.id
       });
     }
-    for (const [ind, embed] of sortedEmbeds.entries()) {
-      const scraper = embeds.find((v) => v.id === embed.embedId);
-      if (!scraper)
-        throw new Error("Invalid embed returned");
+    for (const [ind, embed2] of sortedEmbeds.entries()) {
+      const scraper = embeds.find((v) => v.id === embed2.embedId);
+      if (!scraper) throw new Error("Invalid embed returned");
       const id = [source.id, ind].join("-");
       (_l = (_k = ops.events) == null ? void 0 : _k.start) == null ? void 0 : _l.call(_k, id);
       lastId = id;
@@ -519,19 +735,28 @@ async function runAllProviders(list, ops) {
       try {
         embedOutput = await scraper.scrape({
           ...contextBase,
-          url: embed.url
+          url: embed2.url
         });
         embedOutput.stream = embedOutput.stream.filter(isValidStream$1).filter((stream) => flagsAllowedInFeatures(ops.features, stream.flags));
+        embedOutput.stream = embedOutput.stream.map(
+          (stream) => requiresProxy(stream) && ops.proxyStreams ? setupProxy(stream) : stream
+        );
         if (embedOutput.stream.length === 0) {
           throw new NotFoundError("No streams found");
         }
-        const playableStream = await validatePlayableStream(embedOutput.stream[0], ops, embed.embedId);
-        if (!playableStream)
-          throw new NotFoundError("No streams found");
+        const playableStream = await validatePlayableStream(embedOutput.stream[0], ops, embed2.embedId);
+        if (!playableStream) throw new NotFoundError("No streams found");
+        playableStream.captions = await addOpenSubtitlesCaptions(
+          playableStream.captions,
+          ops,
+          btoa(
+            `${ops.media.imdbId}${ops.media.type === "show" ? `.${ops.media.season.number}.${ops.media.episode.number}` : ""}`
+          )
+        );
         embedOutput.stream = [playableStream];
       } catch (error) {
         const updateParams = {
-          id: source.id,
+          id,
           percentage: 100,
           status: error instanceof NotFoundError ? "notfound" : "failure",
           reason: error instanceof NotFoundError ? error.message : void 0,
@@ -557,7 +782,8 @@ function makeControls(ops) {
   const providerRunnerOps = {
     features: ops.features,
     fetcher: makeFetcher(ops.fetcher),
-    proxiedFetcher: makeFetcher(ops.proxiedFetcher ?? ops.fetcher)
+    proxiedFetcher: makeFetcher(ops.proxiedFetcher ?? ops.fetcher),
+    proxyStreams: ops.proxyStreams
   };
   return {
     runAll(runnerOps) {
@@ -590,7 +816,7 @@ function makeControls(ops) {
   };
 }
 const nanoid = customAlphabet("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", 10);
-const baseUrl$3 = "https://d000d.com";
+const baseUrl$a = "https://d000d.com";
 const doodScraper = makeEmbed({
   id: "dood",
   name: "dood",
@@ -605,21 +831,20 @@ const doodScraper = makeEmbed({
     const id = url.split("/d/")[1] || url.split("/e/")[1];
     const doodData = await ctx.proxiedFetcher(`/e/${id}`, {
       method: "GET",
-      baseUrl: baseUrl$3
+      baseUrl: baseUrl$a
     });
     const dataForLater = (_a = doodData.match(/\?token=([^&]+)&expiry=/)) == null ? void 0 : _a[1];
     const path = (_b = doodData.match(/\$\.get\('\/pass_md5([^']+)/)) == null ? void 0 : _b[1];
     const thumbnailTrack = doodData.match(/thumbnails:\s\{\s*vtt:\s'([^']*)'/);
     const doodPage = await ctx.proxiedFetcher(`/pass_md5${path}`, {
       headers: {
-        Referer: `${baseUrl$3}/e/${id}`
+        Referer: `${baseUrl$a}/e/${id}`
       },
       method: "GET",
-      baseUrl: baseUrl$3
+      baseUrl: baseUrl$a
     });
     const downloadURL = `${doodPage}${nanoid()}?token=${dataForLater}&expiry=${Date.now()}`;
-    if (!downloadURL.startsWith("http"))
-      throw new Error("Invalid URL");
+    if (!downloadURL.startsWith("http")) throw new Error("Invalid URL");
     return {
       stream: [
         {
@@ -634,7 +859,7 @@ const doodScraper = makeEmbed({
             }
           },
           headers: {
-            Referer: baseUrl$3
+            Referer: baseUrl$a
           },
           ...thumbnailTrack ? {
             thumbnailTrack: {
@@ -647,7 +872,7 @@ const doodScraper = makeEmbed({
     };
   }
 });
-const evalCodeRegex$2 = /eval\((.*)\)/g;
+const evalCodeRegex$3 = /eval\((.*)\)/g;
 const fileRegex$2 = /file:"(.*?)"/g;
 const tracksRegex$3 = /\{file:"([^"]+)",kind:"thumbnails"\}/g;
 const droploadScraper = makeEmbed({
@@ -662,14 +887,12 @@ const droploadScraper = makeEmbed({
     });
     const mainPageUrl = new URL(mainPageRes.finalUrl);
     const mainPage = mainPageRes.body;
-    const evalCode = mainPage.match(evalCodeRegex$2);
-    if (!evalCode)
-      throw new Error("Failed to find eval code");
+    const evalCode = mainPage.match(evalCodeRegex$3);
+    if (!evalCode) throw new Error("Failed to find eval code");
     const unpacked = unpack(evalCode[1]);
     const file = fileRegex$2.exec(unpacked);
     const thumbnailTrack = tracksRegex$3.exec(unpacked);
-    if (!(file == null ? void 0 : file[1]))
-      throw new Error("Failed to find file");
+    if (!(file == null ? void 0 : file[1])) throw new Error("Failed to find file");
     return {
       stream: [
         {
@@ -728,57 +951,22 @@ async function getStreams$1(ctx, shareKey, type, season, episode) {
   const streams = await getFileList(ctx, shareKey);
   if (type === "show") {
     const seasonFolder = streams.find((v) => {
-      if (!v.is_dir)
-        return false;
+      if (!v.is_dir) return false;
       return v.file_name.toLowerCase() === `season ${season}`;
     });
-    if (!seasonFolder)
-      return [];
+    if (!seasonFolder) return [];
     const episodes = await getFileList(ctx, shareKey, seasonFolder.fid);
     const s = (season == null ? void 0 : season.toString()) ?? "0";
     const e = (episode == null ? void 0 : episode.toString()) ?? "0";
     const episodeRegex = new RegExp(`[Ss]0*${s}[Ee]0*${e}`);
     return episodes.filter((file) => {
-      if (file.is_dir)
-        return false;
+      if (file.is_dir) return false;
       const match = file.file_name.match(episodeRegex);
-      if (!match)
-        return false;
+      if (!match) return false;
       return true;
     }).filter(isValidStream);
   }
   return streams.filter((v) => !v.is_dir).filter(isValidStream);
-}
-const captionTypes = {
-  srt: "srt",
-  vtt: "vtt"
-};
-function getCaptionTypeFromUrl(url) {
-  const extensions = Object.keys(captionTypes);
-  const type = extensions.find((v) => url.endsWith(`.${v}`));
-  if (!type)
-    return null;
-  return type;
-}
-function labelToLanguageCode(label) {
-  const code = ISO6391.getCode(label);
-  if (code.length === 0)
-    return null;
-  return code;
-}
-function isValidLanguageCode(code) {
-  if (!code)
-    return false;
-  return ISO6391.validate(code);
-}
-function removeDuplicatedLanguages(list) {
-  const beenSeen = {};
-  return list.filter((sub) => {
-    if (beenSeen[sub.language])
-      return false;
-    beenSeen[sub.language] = true;
-    return true;
-  });
 }
 const iv = atob("d0VpcGhUbiE=");
 const key = atob("MTIzZDZjZWRmNjI2ZHk1NDIzM2FhMXc2");
@@ -862,17 +1050,14 @@ async function getSubtitles(ctx, id, fid, type, episodeId, seasonId) {
   let output = [];
   subtitleList.forEach((sub) => {
     const subtitle = sub.subtitles.sort((a, b) => b.order - a.order)[0];
-    if (!subtitle)
-      return;
+    if (!subtitle) return;
     const subtitleFilePath = subtitle.file_path.replace(captionsDomains[0], captionsDomains[1]).replace(/\s/g, "+").replace(/[()]/g, (c) => {
       return `%${c.charCodeAt(0).toString(16)}`;
     });
     const subtitleType = getCaptionTypeFromUrl(subtitleFilePath);
-    if (!subtitleType)
-      return;
+    if (!subtitleType) return;
     const validCode = isValidLanguageCode(subtitle.lang);
-    if (!validCode)
-      return;
+    if (!validCode) return;
     output.push({
       id: subtitleFilePath,
       language: subtitle.lang,
@@ -904,14 +1089,12 @@ const febboxHlsScraper = makeEmbed({
         type: type === "movie" ? "1" : "2"
       }
     });
-    if (!((_a = sharelinkResult == null ? void 0 : sharelinkResult.data) == null ? void 0 : _a.link))
-      throw new Error("No embed url found");
+    if (!((_a = sharelinkResult == null ? void 0 : sharelinkResult.data) == null ? void 0 : _a.link)) throw new Error("No embed url found");
     ctx.progress(30);
     const shareKey = extractShareKey(sharelinkResult.data.link);
     const fileList = await getStreams$1(ctx, shareKey, type, season, episode);
     const firstStream = fileList[0];
-    if (!firstStream)
-      throw new Error("No playable mp4 stream found");
+    if (!firstStream) throw new Error("No playable mp4 stream found");
     ctx.progress(70);
     return {
       stream: [
@@ -929,8 +1112,7 @@ const febboxHlsScraper = makeEmbed({
 const allowedQualities = ["360", "480", "720", "1080", "4k"];
 function mapToQuality(quality) {
   const q = quality.real_quality.replace("p", "").toLowerCase();
-  if (!allowedQualities.includes(q))
-    return null;
+  if (!allowedQualities.includes(q)) return null;
   return {
     real_quality: q,
     path: quality.path,
@@ -982,11 +1164,9 @@ const febboxMp4Scraper = makeEmbed({
         group: ""
       };
     }
-    if (!apiQuery)
-      throw Error("Incorrect type");
+    if (!apiQuery) throw Error("Incorrect type");
     const { qualities, fid } = await getStreamQualities(ctx, apiQuery);
-    if (fid === void 0)
-      throw new Error("No streamable file found");
+    if (fid === void 0) throw new Error("No streamable file found");
     ctx.progress(70);
     return {
       stream: [
@@ -1018,8 +1198,7 @@ const filelionsScraper = makeEmbed({
     const streamUrl = mainPage.match(linkRegex$5) ?? [];
     const thumbnailTrack = tracksRegex$2.exec(mainPage);
     const playlist = streamUrl[1];
-    if (!playlist)
-      throw new Error("Stream url not found");
+    if (!playlist) throw new Error("Stream url not found");
     return {
       stream: [
         {
@@ -1048,8 +1227,7 @@ const mixdropScraper = makeEmbed({
   rank: 198,
   async scrape(ctx) {
     let embedUrl = ctx.url;
-    if (ctx.url.includes("primewire"))
-      embedUrl = (await ctx.fetcher.full(ctx.url)).finalUrl;
+    if (ctx.url.includes("primewire")) embedUrl = (await ctx.fetcher.full(ctx.url)).finalUrl;
     const embedId = new URL(embedUrl).pathname.split("/")[2];
     const streamRes = await ctx.proxiedFetcher(`/e/${embedId}`, {
       baseUrl: mixdropBase
@@ -1092,12 +1270,11 @@ const mp4uploadScraper = makeEmbed({
   name: "mp4upload",
   rank: 170,
   async scrape(ctx) {
-    const embed = await ctx.proxiedFetcher(ctx.url);
+    const embed2 = await ctx.proxiedFetcher(ctx.url);
     const playerSrcRegex = new RegExp('(?<=player\\.src\\()\\s*{\\s*type:\\s*"[^"]+",\\s*src:\\s*"([^"]+)"\\s*}\\s*(?=\\);)', "s");
-    const playerSrc = embed.match(playerSrcRegex) ?? [];
+    const playerSrc = embed2.match(playerSrcRegex) ?? [];
     const streamUrl = playerSrc[1];
-    if (!streamUrl)
-      throw new Error("Stream url not found in embed code");
+    if (!streamUrl) throw new Error("Stream url not found in embed code");
     return {
       stream: [
         {
@@ -1178,8 +1355,7 @@ function getDefaultExportFromCjs(x) {
   return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, "default") ? x["default"] : x;
 }
 function getAugmentedNamespace(n) {
-  if (n.__esModule)
-    return n;
+  if (n.__esModule) return n;
   var f = n.default;
   if (typeof f == "function") {
     var a = function a2() {
@@ -1189,8 +1365,7 @@ function getAugmentedNamespace(n) {
       return f.apply(this, arguments);
     };
     a.prototype = f.prototype;
-  } else
-    a = {};
+  } else a = {};
   Object.defineProperty(a, "__esModule", { value: true });
   Object.keys(n).forEach(function(k) {
     var d = Object.getOwnPropertyDescriptor(n, k);
@@ -1216,8 +1391,7 @@ const __viteBrowserExternal$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Ob
 const require$$0 = /* @__PURE__ */ getAugmentedNamespace(__viteBrowserExternal$1);
 var hasRequiredCore;
 function requireCore() {
-  if (hasRequiredCore)
-    return core.exports;
+  if (hasRequiredCore) return core.exports;
   hasRequiredCore = 1;
   (function(module, exports) {
     (function(root, factory) {
@@ -1957,8 +2131,7 @@ async function fetchCaptchaToken(ctx, domain, recaptchaKey) {
     }
   );
   const cToken = load(recaptchaAnchor)("#recaptcha-token").attr("value");
-  if (!cToken)
-    throw new Error("Unable to find cToken");
+  if (!cToken) throw new Error("Unable to find cToken");
   const tokenData = await ctx.proxiedFetcher(`https://www.google.com/recaptcha/api2/reload`, {
     query: {
       v: vToken,
@@ -1990,13 +2163,11 @@ const streamsbScraper = makeEmbed({
       const funcContents = $el.attr("onclick");
       const regExpFunc = /download_video\('(.+?)','(.+?)','(.+?)'\)/;
       const matchesFunc = regExpFunc.exec(funcContents ?? "");
-      if (!matchesFunc)
-        return;
+      if (!matchesFunc) return;
       const quality = $el.find("span").text();
       const regExpQuality = /(.+?) \((.+?)\)/;
       const matchesQuality = regExpQuality.exec(quality ?? "");
-      if (!matchesQuality)
-        return;
+      if (!matchesQuality) return;
       dlDetails.push({
         parameters: [matchesFunc[1], matchesFunc[2], matchesFunc[3]],
         quality: {
@@ -2020,11 +2191,9 @@ const streamsbScraper = makeEmbed({
         });
         const downloadDoc = load(getDownload);
         const recaptchaKey = downloadDoc(".g-recaptcha").attr("data-sitekey");
-        if (!recaptchaKey)
-          throw new Error("Unable to get captcha key");
+        if (!recaptchaKey) throw new Error("Unable to get captcha key");
         const captchaToken = await fetchCaptchaToken(ctx, parsedUrl.origin, recaptchaKey);
-        if (!captchaToken)
-          throw new Error("Unable to get captcha token");
+        if (!captchaToken) throw new Error("Unable to get captcha token");
         const dlForm = new FormData();
         dlForm.append("op", "download_orig");
         dlForm.append("id", dl.parameters[0]);
@@ -2069,9 +2238,69 @@ const streamsbScraper = makeEmbed({
     };
   }
 });
+function hexToChar(hex) {
+  return String.fromCharCode(parseInt(hex, 16));
+}
+function decrypt(data2, key2) {
+  var _a;
+  const formatedData = ((_a = data2.match(/../g)) == null ? void 0 : _a.map(hexToChar).join("")) || "";
+  return formatedData.split("").map((char, i) => String.fromCharCode(char.charCodeAt(0) ^ key2.charCodeAt(i % key2.length))).join("");
+}
+const turbovidScraper = makeEmbed({
+  id: "turbovid",
+  name: "Turbovid",
+  rank: 122,
+  async scrape(ctx) {
+    var _a, _b;
+    const baseUrl3 = new URL(ctx.url).origin;
+    const embedPage = await ctx.proxiedFetcher(ctx.url);
+    ctx.progress(30);
+    const apkey = (_a = embedPage.match(/const\s+apkey\s*=\s*"(.*?)";/)) == null ? void 0 : _a[1];
+    const xxid = (_b = embedPage.match(/const\s+xxid\s*=\s*"(.*?)";/)) == null ? void 0 : _b[1];
+    if (!apkey || !xxid) throw new Error("Failed to get required values");
+    const juiceKey = JSON.parse(
+      await ctx.proxiedFetcher("/api/cucked/juice_key", {
+        baseUrl: baseUrl3,
+        headers: {
+          referer: ctx.url
+        }
+      })
+    ).juice;
+    if (!juiceKey) throw new Error("Failed to fetch the key");
+    ctx.progress(60);
+    const data2 = JSON.parse(
+      await ctx.proxiedFetcher("/api/cucked/the_juice/", {
+        baseUrl: baseUrl3,
+        query: {
+          [apkey]: xxid
+        },
+        headers: {
+          referer: ctx.url
+        }
+      })
+    ).data;
+    if (!data2) throw new Error("Failed to fetch required data");
+    ctx.progress(90);
+    const playlist = decrypt(data2, juiceKey);
+    return {
+      stream: [
+        {
+          type: "hls",
+          id: "primary",
+          playlist,
+          headers: {
+            referer: baseUrl3
+          },
+          flags: [],
+          captions: []
+        }
+      ]
+    };
+  }
+});
 const origin$1 = "https://rabbitstream.net";
 const referer$4 = "https://rabbitstream.net/";
-const { AES, enc } = CryptoJS;
+const { AES: AES$1, enc } = CryptoJS;
 function isJSON(json) {
   try {
     JSON.parse(json);
@@ -2092,8 +2321,7 @@ function extractKey(script) {
       const regex = new RegExp(`${varMatch}=0x([a-zA-Z0-9]+)`, "g");
       const varMatches = [...script.matchAll(regex)];
       const lastMatch = varMatches[varMatches.length - 1];
-      if (!lastMatch)
-        return null;
+      if (!lastMatch) return null;
       const number = parseInt(lastMatch[1], 16);
       innerNumbers.push(number);
     }
@@ -2125,8 +2353,7 @@ const upcloudScraper = makeEmbed({
         }
       });
       const decryptionKey = extractKey(scriptJs);
-      if (!decryptionKey)
-        throw new Error("Key extraction failed");
+      if (!decryptionKey) throw new Error("Key extraction failed");
       let extractedKey = "";
       let strippedSources = streamRes.sources;
       let totalledOffset = 0;
@@ -2137,24 +2364,19 @@ const upcloudScraper = makeEmbed({
         strippedSources = strippedSources.replace(streamRes.sources.substring(start, end), "");
         totalledOffset += b;
       });
-      const decryptedStream = AES.decrypt(strippedSources, extractedKey).toString(enc.Utf8);
+      const decryptedStream = AES$1.decrypt(strippedSources, extractedKey).toString(enc.Utf8);
       const parsedStream = JSON.parse(decryptedStream)[0];
-      if (!parsedStream)
-        throw new Error("No stream found");
+      if (!parsedStream) throw new Error("No stream found");
       sources = parsedStream;
     }
-    if (!sources)
-      throw new Error("upcloud source not found");
+    if (!sources) throw new Error("upcloud source not found");
     const captions = [];
     streamRes.tracks.forEach((track) => {
-      if (track.kind !== "captions")
-        return;
+      if (track.kind !== "captions") return;
       const type = getCaptionTypeFromUrl(track.file);
-      if (!type)
-        return;
+      if (!type) return;
       const language = labelToLanguageCode(track.label.split(" ")[0]);
-      if (!language)
-        return;
+      if (!language) return;
       captions.push({
         id: track.file,
         language,
@@ -2233,12 +2455,10 @@ const vidsrcembedScraper = makeEmbed({
       }
     });
     let hlsMatch = (_b = (_a = html.match(hlsURLRegex)) == null ? void 0 : _a[1]) == null ? void 0 : _b.slice(2);
-    if (!hlsMatch)
-      throw new Error("Unable to find HLS playlist");
+    if (!hlsMatch) throw new Error("Unable to find HLS playlist");
     hlsMatch = formatHlsB64(hlsMatch);
     const finalUrl = atob(hlsMatch);
-    if (!finalUrl.includes(".m3u8"))
-      throw new Error("Unable to find HLS playlist");
+    if (!finalUrl.includes(".m3u8")) throw new Error("Unable to find HLS playlist");
     let setPassLink = (_c = html.match(setPassRegex)) == null ? void 0 : _c[1];
     if (setPassLink) {
       if (setPassLink.startsWith("//")) {
@@ -2267,7 +2487,7 @@ const vidsrcembedScraper = makeEmbed({
     };
   }
 });
-const evalCodeRegex$1 = /eval\((.*)\)/g;
+const evalCodeRegex$2 = /eval\((.*)\)/g;
 const fileRegex$1 = /file:"(.*?)"/g;
 const tracksRegex$1 = /\{file:"([^"]+)",kind:"thumbnails"\}/g;
 const vTubeScraper = makeEmbed({
@@ -2282,14 +2502,12 @@ const vTubeScraper = makeEmbed({
     });
     const mainPage = mainPageRes.body;
     const html = load(mainPage);
-    const evalCode = html("script").text().match(evalCodeRegex$1);
-    if (!evalCode)
-      throw new Error("Failed to find eval code");
+    const evalCode = html("script").text().match(evalCodeRegex$2);
+    if (!evalCode) throw new Error("Failed to find eval code");
     const unpacked = unpack(evalCode == null ? void 0 : evalCode.toString());
     const file = fileRegex$1.exec(unpacked);
     const thumbnailTrack = tracksRegex$1.exec(unpacked);
-    if (!(file == null ? void 0 : file[1]))
-      throw new Error("Failed to find file");
+    if (!(file == null ? void 0 : file[1])) throw new Error("Failed to find file");
     return {
       stream: [
         {
@@ -2308,6 +2526,226 @@ const vTubeScraper = makeEmbed({
       ]
     };
   }
+});
+const baseUrl$9 = "https://autoembed.cc/";
+async function comboScraper$6(ctx) {
+  const playerPage = await ctx.proxiedFetcher(`/embed/player.php`, {
+    baseUrl: baseUrl$9,
+    query: {
+      id: ctx.media.tmdbId,
+      ...ctx.media.type === "show" && {
+        s: ctx.media.season.number.toString(),
+        e: ctx.media.episode.number.toString()
+      }
+    }
+  });
+  const fileDataMatch = playerPage.match(/"file": (\[.*?\])/s);
+  if (!fileDataMatch[1]) throw new NotFoundError("No data found");
+  const fileData = JSON.parse(fileDataMatch[1].replace(/,\s*\]$/, "]"));
+  const embeds = [];
+  for (const stream of fileData) {
+    const url = stream.file;
+    if (!url) continue;
+    embeds.push({ embedId: `autoembed-${stream.title.toLowerCase().trim()}`, url });
+  }
+  return {
+    embeds
+  };
+}
+const autoembedScraper = makeSourcerer({
+  id: "autoembed",
+  name: "Autoembed",
+  rank: 10,
+  disabled: true,
+  flags: [flags.CORS_ALLOWED],
+  scrapeMovie: comboScraper$6,
+  scrapeShow: comboScraper$6
+});
+function normalizeTitle(title) {
+  let titleTrimmed = title.trim().toLowerCase();
+  if (titleTrimmed !== "the movie" && titleTrimmed.endsWith("the movie")) {
+    titleTrimmed = titleTrimmed.replace("the movie", "");
+  }
+  if (titleTrimmed !== "the series" && titleTrimmed.endsWith("the series")) {
+    titleTrimmed = titleTrimmed.replace("the series", "");
+  }
+  return titleTrimmed.replace(/['":]/g, "").replace(/[^a-zA-Z0-9]+/g, "_");
+}
+function compareTitle(a, b) {
+  return normalizeTitle(a) === normalizeTitle(b);
+}
+function compareMedia(media, title, releaseYear) {
+  const isSameYear = releaseYear === void 0 ? true : media.releaseYear === releaseYear;
+  return compareTitle(media.title, title) && isSameYear;
+}
+const baseUrl$8 = "https://catflix.su";
+async function comboScraper$5(ctx) {
+  var _a;
+  const searchPage = await ctx.proxiedFetcher("/", {
+    baseUrl: baseUrl$8,
+    query: {
+      s: ctx.media.title
+    }
+  });
+  ctx.progress(40);
+  const $search = load(searchPage);
+  const searchResults = [];
+  $search("li").each((_, element) => {
+    const title = $search(element).find("h2").first().text().trim();
+    const year = Number($search(element).find(".text-xs > span").eq(1).text().trim()) || void 0;
+    const url2 = $search(element).find("a").attr("href");
+    if (!title || !url2) return;
+    searchResults.push({ title, year, url: url2 });
+  });
+  let watchPageUrl = (_a = searchResults.find((x) => x && compareMedia(ctx.media, x.title, x.year))) == null ? void 0 : _a.url;
+  if (!watchPageUrl) throw new NotFoundError("No watchable item found");
+  ctx.progress(60);
+  if (ctx.media.type === "show") {
+    const match = watchPageUrl.match(/\/series\/([^/]+)\/?/);
+    if (!match) throw new Error("Failed to parse watch page url");
+    watchPageUrl = watchPageUrl.replace(
+      `/series/${match[1]}`,
+      `/episode/${match[1]}-${ctx.media.season.number}x${ctx.media.episode.number}`
+    );
+  }
+  const watchPage = load(await ctx.proxiedFetcher(watchPageUrl));
+  ctx.progress(80);
+  const url = watchPage("iframe").first().attr("src");
+  if (!url) throw new Error("Failed to find embed url");
+  ctx.progress(90);
+  return {
+    embeds: [
+      {
+        embedId: "turbovid",
+        url
+      }
+    ]
+  };
+}
+const catflixScraper = makeSourcerer({
+  id: "catflix",
+  name: "Catflix",
+  rank: 122,
+  flags: [],
+  scrapeMovie: comboScraper$5,
+  scrapeShow: comboScraper$5
+});
+function makeCookieHeader(cookies) {
+  return Object.entries(cookies).map(([name, value]) => cookie.serialize(name, value)).join("; ");
+}
+function parseSetCookie(headerValue) {
+  const splitHeaderValue = setCookieParser.splitCookiesString(headerValue);
+  const parsedCookies = setCookieParser.parse(splitHeaderValue, {
+    map: true
+  });
+  return parsedCookies;
+}
+const baseUrl$7 = "https://ee3.me";
+const username = "_sf_";
+const password = "defonotscraping";
+async function login(user, pass, ctx) {
+  const req = await ctx.proxiedFetcher.full("/login", {
+    baseUrl: baseUrl$7,
+    method: "POST",
+    body: new URLSearchParams({ user, pass, action: "login" }),
+    readHeaders: ["Set-Cookie"]
+  });
+  const res = JSON.parse(req.body);
+  const cookie2 = parseSetCookie(
+    // It retruns a cookie even when the login failed
+    // I have the backup cookie here just in case
+    res.status === 1 ? req.headers.get("Set-Cookie") ?? "" : "PHPSESSID=mk2p73c77qc28o5i5120843ruu;"
+  );
+  return cookie2.PHPSESSID.value;
+}
+function parseSearch$1(body) {
+  const result = [];
+  const $ = load(body);
+  $("div").each((_, element) => {
+    const title = $(element).find(".title").text().trim();
+    const year = parseInt($(element).find(".details span").first().text().trim(), 10);
+    const id = $(element).find(".control-buttons").attr("data-id");
+    if (title && year && id) {
+      result.push({ title, year, id });
+    }
+  });
+  return result;
+}
+async function comboScraper$4(ctx) {
+  var _a, _b;
+  const pass = await login(username, password, ctx);
+  if (!pass) throw new Error("Login failed");
+  const search2 = parseSearch$1(
+    await ctx.proxiedFetcher("/get", {
+      baseUrl: baseUrl$7,
+      method: "POST",
+      body: new URLSearchParams({ query: ctx.media.title, action: "search" }),
+      headers: {
+        cookie: makeCookieHeader({ PHPSESSID: pass })
+      }
+    })
+  );
+  const id = (_a = search2.find((v) => v && compareMedia(ctx.media, v.title, v.year))) == null ? void 0 : _a.id;
+  if (!id) throw new NotFoundError("No watchable item found");
+  const details = JSON.parse(
+    await ctx.proxiedFetcher("/get", {
+      baseUrl: baseUrl$7,
+      method: "POST",
+      body: new URLSearchParams({ id, action: "get_movie_info" }),
+      headers: {
+        cookie: makeCookieHeader({ PHPSESSID: pass })
+      }
+    })
+  );
+  if (!details.message.video) throw new Error("Failed to get the stream");
+  const keyParams = JSON.parse(
+    await ctx.proxiedFetcher("/renew", {
+      baseUrl: baseUrl$7,
+      method: "POST",
+      headers: {
+        cookie: makeCookieHeader({ PHPSESSID: pass })
+      }
+    })
+  );
+  if (!keyParams.k) throw new Error("Failed to get the key");
+  const server = details.message.server === "1" ? "https://vid.ee3.me/vid/" : "https://vault.rips.cc/video/";
+  const k = keyParams.k;
+  const url = `${server}${details.message.video}?${new URLSearchParams({ k })}`;
+  const captions = [];
+  if (((_b = details.message.subs) == null ? void 0 : _b.toLowerCase()) === "yes" && details.message.imdbID) {
+    captions.push({
+      id: `https://rips.cc/subs/${details.message.imdbID}.vtt`,
+      url: `https://rips.cc/subs/${details.message.imdbID}.vtt`,
+      type: "vtt",
+      hasCorsRestrictions: false,
+      language: "en"
+    });
+  }
+  return {
+    embeds: [],
+    stream: [
+      {
+        id: "primary",
+        type: "file",
+        flags: [flags.CORS_ALLOWED],
+        captions,
+        qualities: {
+          // should be unknown, but all the videos are 720p
+          720: {
+            type: "mp4",
+            url
+          }
+        }
+      }
+    ]
+  };
+}
+const ee3Scraper = makeSourcerer({
+  id: "ee3",
+  name: "EE3",
+  rank: 111,
+  flags: [flags.CORS_ALLOWED],
+  scrapeMovie: comboScraper$4
 });
 const vidCloudScraper = makeEmbed({
   id: "vidcloud",
@@ -2342,8 +2780,7 @@ async function getFlixhqMovieSources(ctx, media, id) {
     const query = doc(el);
     const embedTitle = query.attr("title");
     const linkId = query.attr("data-linkid");
-    if (!embedTitle || !linkId)
-      throw new Error("invalid sources");
+    if (!embedTitle || !linkId) throw new Error("invalid sources");
     return {
       embed: embedTitle,
       episodeId: linkId
@@ -2360,8 +2797,7 @@ async function getFlixhqShowSources(ctx, media, id) {
   });
   const seasonsDoc = load(seasonsListData);
   const season = (_a = seasonsDoc(".dropdown-item").toArray().find((el) => seasonsDoc(el).text() === `Season ${media.season.number}`)) == null ? void 0 : _a.attribs["data-id"];
-  if (!season)
-    throw new NotFoundError("season not found");
+  if (!season) throw new NotFoundError("season not found");
   const seasonData = await ctx.proxiedFetcher(`/ajax/season/episodes/${season}`, {
     baseUrl: flixHqBase
   });
@@ -2375,8 +2811,7 @@ async function getFlixhqShowSources(ctx, media, id) {
     var _a2;
     return (_a2 = e.title) == null ? void 0 : _a2.startsWith(`Eps ${media.episode.number}`);
   })) == null ? void 0 : _b.id;
-  if (!episode)
-    throw new NotFoundError("episode not found");
+  if (!episode) throw new NotFoundError("episode not found");
   const data2 = await ctx.proxiedFetcher(`/ajax/episode/servers/${episode}`, {
     baseUrl: flixHqBase
   });
@@ -2385,31 +2820,13 @@ async function getFlixhqShowSources(ctx, media, id) {
     const query = doc(el);
     const embedTitle = query.attr("title");
     const linkId = query.attr("data-id");
-    if (!embedTitle || !linkId)
-      throw new Error("invalid sources");
+    if (!embedTitle || !linkId) throw new Error("invalid sources");
     return {
       embed: embedTitle,
       episodeId: linkId
     };
   });
   return sourceLinks;
-}
-function normalizeTitle(title) {
-  let titleTrimmed = title.trim().toLowerCase();
-  if (titleTrimmed !== "the movie" && titleTrimmed.endsWith("the movie")) {
-    titleTrimmed = titleTrimmed.replace("the movie", "");
-  }
-  if (titleTrimmed !== "the series" && titleTrimmed.endsWith("the series")) {
-    titleTrimmed = titleTrimmed.replace("the series", "");
-  }
-  return titleTrimmed.replace(/['":]/g, "").replace(/[^a-zA-Z0-9]+/g, "_");
-}
-function compareTitle(a, b) {
-  return normalizeTitle(a) === normalizeTitle(b);
-}
-function compareMedia(media, title, releaseYear) {
-  const isSameYear = releaseYear === void 0 ? true : media.releaseYear === releaseYear;
-  return compareTitle(media.title, title) && isSameYear;
 }
 async function getFlixhqId(ctx, media) {
   const searchResults = await ctx.proxiedFetcher(`/search/${media.title.replaceAll(/[^a-z0-9A-Z]/g, "-")}`, {
@@ -2423,8 +2840,7 @@ async function getFlixhqId(ctx, media) {
     const title = query.find("div.film-detail > h2 > a").attr("title");
     const year = query.find("div.film-detail > div.fd-infor > span:nth-child(1)").text();
     const seasons = year.includes("SS") ? year.split("SS")[1] : "0";
-    if (!id || !title || !year)
-      return null;
+    if (!id || !title || !year) return null;
     return {
       id,
       title,
@@ -2433,15 +2849,13 @@ async function getFlixhqId(ctx, media) {
     };
   });
   const matchingItem = items.find((v) => {
-    if (!v)
-      return false;
+    if (!v) return false;
     if (media.type === "movie") {
       return compareMedia(media, v.title, v.year);
     }
     return compareTitle(media.title, v.title) && media.season.number < v.seasons + 1;
   });
-  if (!matchingItem)
-    return null;
+  if (!matchingItem) return null;
   return matchingItem.id;
 }
 const flixhqScraper = makeSourcerer({
@@ -2452,8 +2866,7 @@ const flixhqScraper = makeSourcerer({
   disabled: true,
   async scrapeMovie(ctx) {
     const id = await getFlixhqId(ctx, ctx.media);
-    if (!id)
-      throw new NotFoundError("no search results match");
+    if (!id) throw new NotFoundError("no search results match");
     const sources = await getFlixhqMovieSources(ctx, ctx.media, id);
     const embeds = [];
     for (const source of sources) {
@@ -2475,8 +2888,7 @@ const flixhqScraper = makeSourcerer({
   },
   async scrapeShow(ctx) {
     const id = await getFlixhqId(ctx, ctx.media);
-    if (!id)
-      throw new NotFoundError("no search results match");
+    if (!id) throw new NotFoundError("no search results match");
     const sources = await getFlixhqShowSources(ctx, ctx.media, id);
     const embeds = [];
     for (const source of sources) {
@@ -2497,6 +2909,92 @@ const flixhqScraper = makeSourcerer({
     };
   }
 });
+function getValidQualityFromString(quality) {
+  switch (quality.toLowerCase().replace("p", "")) {
+    case "360":
+      return "360";
+    case "480":
+      return "480";
+    case "720":
+      return "720";
+    case "1080":
+      return "1080";
+    case "2160":
+      return "4k";
+    case "4k":
+      return "4k";
+    default:
+      return "unknown";
+  }
+}
+const baseUrl$6 = "https://fsharetv.co";
+async function comboScraper$3(ctx) {
+  var _a, _b;
+  const searchPage = await ctx.proxiedFetcher("/search", {
+    baseUrl: baseUrl$6,
+    query: {
+      q: ctx.media.title
+    }
+  });
+  const search$ = load(searchPage);
+  const searchResults = [];
+  search$(".movie-item").each((_, element) => {
+    var _a2;
+    const [, title, year] = ((_a2 = search$(element).find("b").text()) == null ? void 0 : _a2.match(/^(.*?)\s*(?:\(?\s*(\d{4})(?:\s*-\s*\d{0,4})?\s*\)?)?\s*$/)) || [];
+    const url = search$(element).find("a").attr("href");
+    if (!title || !url) return;
+    searchResults.push({ title, year: Number(year) ?? void 0, url });
+  });
+  const watchPageUrl = (_a = searchResults.find((x) => x && compareMedia(ctx.media, x.title, x.year))) == null ? void 0 : _a.url;
+  if (!watchPageUrl) throw new NotFoundError("No watchable item found");
+  const watchPage = await ctx.proxiedFetcher(watchPageUrl.replace("/movie", "/w"), { baseUrl: baseUrl$6 });
+  const fileId = (_b = watchPage.match(/Movie\.setSource\('([^']*)'/)) == null ? void 0 : _b[1];
+  if (!fileId) throw new Error("File ID not found");
+  const apiRes = await ctx.proxiedFetcher(
+    `/api/file/${fileId}/source`,
+    {
+      baseUrl: baseUrl$6,
+      query: {
+        type: "watch"
+      }
+    }
+  );
+  if (!apiRes.data.file.sources.length) throw new Error("No sources found");
+  const qualities = apiRes.data.file.sources.reduce(
+    (acc, source) => {
+      const quality = typeof source.quality === "number" ? source.quality.toString() : source.quality;
+      const validQuality = getValidQualityFromString(quality);
+      acc[validQuality] = {
+        type: "mp4",
+        url: `${baseUrl$6}${source.src}`
+      };
+      return acc;
+    },
+    {}
+  );
+  return {
+    embeds: [],
+    stream: [
+      {
+        id: "primary",
+        type: "file",
+        flags: [],
+        headers: {
+          referer: "https://fsharetv.co"
+        },
+        qualities,
+        captions: []
+      }
+    ]
+  };
+}
+const fsharetvScraper = makeSourcerer({
+  id: "fsharetv",
+  name: "FshareTV",
+  rank: 93,
+  flags: [],
+  scrapeMovie: comboScraper$3
+});
 const linkRegex$1 = /'hls': ?'(http.*?)',/;
 const tracksRegex = /previewThumbnails:\s{.*src:\["([^"]+)"]/;
 const voeScraper = makeEmbed({
@@ -2505,12 +3003,11 @@ const voeScraper = makeEmbed({
   rank: 180,
   async scrape(ctx) {
     const embedRes = await ctx.proxiedFetcher.full(ctx.url);
-    const embed = embedRes.body;
-    const playerSrc = embed.match(linkRegex$1) ?? [];
-    const thumbnailTrack = embed.match(tracksRegex);
+    const embed2 = embedRes.body;
+    const playerSrc = embed2.match(linkRegex$1) ?? [];
+    const thumbnailTrack = embed2.match(tracksRegex);
     const streamUrl = playerSrc[1];
-    if (!streamUrl)
-      throw new Error("Stream url not found in embed code");
+    if (!streamUrl) throw new Error("Stream url not found in embed code");
     return {
       stream: [
         {
@@ -2536,16 +3033,14 @@ const voeScraper = makeEmbed({
 async function getSource(ctx, sources, title) {
   const source = load(sources)(`a[title*=${title} i]`);
   const sourceDataId = (source == null ? void 0 : source.attr("data-id")) ?? (source == null ? void 0 : source.attr("data-linkid"));
-  if (!sourceDataId)
-    return void 0;
+  if (!sourceDataId) return void 0;
   const sourceData = await ctx.proxiedFetcher(`/ajax/sources/${sourceDataId}`, {
     headers: {
       "X-Requested-With": "XMLHttpRequest"
     },
     baseUrl: gomoviesBase
   });
-  if (!sourceData.link || sourceData.type !== "iframe")
-    return void 0;
+  if (!sourceData.link || sourceData.type !== "iframe") return void 0;
   return sourceData;
 }
 const gomoviesBase = `https://gomovies.sx`;
@@ -2574,8 +3069,7 @@ const goMoviesScraper = makeSourcerer({
       return { name, year, path };
     });
     const targetMedia = mediaData.find((m) => m.name === ctx.media.title);
-    if (!(targetMedia == null ? void 0 : targetMedia.path))
-      throw new NotFoundError("Media not found");
+    if (!(targetMedia == null ? void 0 : targetMedia.path)) throw new NotFoundError("Media not found");
     let mediaId = (_a = targetMedia.path.split("-").pop()) == null ? void 0 : _a.replace("/", "");
     const seasons = await ctx.proxiedFetcher(`/ajax/v2/tv/seasons/${mediaId}`, {
       headers: {
@@ -2590,8 +3084,7 @@ const goMoviesScraper = makeSourcerer({
     }));
     const seasonNumber = ctx.media.season.number;
     const targetSeason = seasonsData.find((season) => +season.number === seasonNumber);
-    if (!targetSeason)
-      throw new NotFoundError("Season not found");
+    if (!targetSeason) throw new NotFoundError("Season not found");
     const episodes = await ctx.proxiedFetcher(`/ajax/v2/season/episodes/${targetSeason.dataId}`, {
       headers: {
         "X-Requested-With": "XMLHttpRequest"
@@ -2606,8 +3099,7 @@ const goMoviesScraper = makeSourcerer({
     }));
     const episodeNumber = ctx.media.episode.number;
     const targetEpisode = episodesData.find((ep) => ep.number ? +ep.number === episodeNumber : false);
-    if (!(targetEpisode == null ? void 0 : targetEpisode.dataId))
-      throw new NotFoundError("Episode not found");
+    if (!(targetEpisode == null ? void 0 : targetEpisode.dataId)) throw new NotFoundError("Episode not found");
     mediaId = targetEpisode.dataId;
     const sources = await ctx.proxiedFetcher(`ajax/v2/episode/servers/${mediaId}`, {
       baseUrl: gomoviesBase,
@@ -2647,12 +3139,11 @@ const goMoviesScraper = makeSourcerer({
         url: mixdropSource == null ? void 0 : mixdropSource.link
       }
     ];
-    const filteredEmbeds = embeds.filter((embed) => embed.url).map((embed) => ({
-      embedId: embed.embedId,
-      url: embed.url
+    const filteredEmbeds = embeds.filter((embed2) => embed2.url).map((embed2) => ({
+      embedId: embed2.embedId,
+      url: embed2.url
     }));
-    if (filteredEmbeds.length === 0)
-      throw new Error("No valid embeds found.");
+    if (filteredEmbeds.length === 0) throw new Error("No valid embeds found.");
     return {
       embeds: filteredEmbeds
     };
@@ -2678,8 +3169,7 @@ const goMoviesScraper = makeSourcerer({
     const targetMedia = mediaData.find(
       (m) => m.name === ctx.media.title && m.year === ctx.media.releaseYear.toString()
     );
-    if (!(targetMedia == null ? void 0 : targetMedia.path))
-      throw new NotFoundError("Media not found");
+    if (!(targetMedia == null ? void 0 : targetMedia.path)) throw new NotFoundError("Media not found");
     const mediaId = (_a = targetMedia.path.split("-").pop()) == null ? void 0 : _a.replace("/", "");
     const sources = await ctx.proxiedFetcher(`ajax/movie/episodes/${mediaId}`, {
       headers: {
@@ -2719,12 +3209,11 @@ const goMoviesScraper = makeSourcerer({
         url: mixdropSource == null ? void 0 : mixdropSource.link
       }
     ];
-    const filteredEmbeds = embeds.filter((embed) => embed.url).map((embed) => ({
-      embedId: embed.embedId,
-      url: embed.url
+    const filteredEmbeds = embeds.filter((embed2) => embed2.url).map((embed2) => ({
+      embedId: embed2.embedId,
+      url: embed2.url
     }));
-    if (filteredEmbeds.length === 0)
-      throw new Error("No valid embeds found.");
+    if (filteredEmbeds.length === 0) throw new Error("No valid embeds found.");
     return {
       embeds: filteredEmbeds
     };
@@ -2779,8 +3268,7 @@ const insertunitScraper = makeSourcerer({
     const currentEpisode = currentSeason == null ? void 0 : currentSeason.episodes.find(
       (episodeElement) => episodeElement.episode.includes(ctx.media.episode.number.toString())
     );
-    if (!(currentEpisode == null ? void 0 : currentEpisode.hls))
-      throw new NotFoundError("No result found");
+    if (!(currentEpisode == null ? void 0 : currentEpisode.hls)) throw new NotFoundError("No result found");
     let captions = [];
     if (currentEpisode.cc != null) {
       captions = await getCaptions(currentEpisode.cc);
@@ -2846,8 +3334,7 @@ const embedProviders = [
 async function getEmbeds$1(ctx, targetEpisode) {
   let embeds = await Promise.all(
     embedProviders.map(async (provider) => {
-      if (!targetEpisode.url)
-        throw new NotFoundError("Episode not found");
+      if (!targetEpisode.url) throw new NotFoundError("Episode not found");
       const watch = await ctx.proxiedFetcher(`${targetEpisode.url}&s=${provider.id}`, {
         baseUrl: kissasianBase,
         headers: {
@@ -2868,8 +3355,7 @@ async function getEmbeds$1(ctx, targetEpisode) {
       });
       const watchPage = load(watch);
       const embedUrl = watchPage("#my_video_1").attr("src");
-      if (!embedUrl)
-        throw new Error("Embed not found");
+      if (!embedUrl) throw new Error("Embed not found");
       return {
         embedId: provider.id,
         url: embedUrl
@@ -2919,8 +3405,7 @@ const kissAsianScraper = makeSourcerer({
       var _a;
       return ((_a = d.name) == null ? void 0 : _a.toLowerCase()) === ctx.media.title.toLowerCase();
     }) ?? dramas[0];
-    if (!targetDrama)
-      throw new NotFoundError("Drama not found");
+    if (!targetDrama) throw new NotFoundError("Drama not found");
     ctx.progress(30);
     const drama = await ctx.proxiedFetcher(targetDrama.url, {
       baseUrl: kissasianBase
@@ -2928,8 +3413,7 @@ const kissAsianScraper = makeSourcerer({
     const dramaPage = load(drama);
     const episodes = await getEpisodes(dramaPage);
     const targetEpisode = episodes.find((e) => e.number === `${episodeNumber}`);
-    if (!(targetEpisode == null ? void 0 : targetEpisode.url))
-      throw new NotFoundError("Episode not found");
+    if (!(targetEpisode == null ? void 0 : targetEpisode.url)) throw new NotFoundError("Episode not found");
     ctx.progress(70);
     const embeds = await getEmbeds$1(ctx, targetEpisode);
     return {
@@ -2942,8 +3426,7 @@ const kissAsianScraper = makeSourcerer({
       var _a;
       return ((_a = d.name) == null ? void 0 : _a.toLowerCase()) === ctx.media.title.toLowerCase();
     }) ?? dramas[0];
-    if (!targetDrama)
-      throw new NotFoundError("Drama not found");
+    if (!targetDrama) throw new NotFoundError("Drama not found");
     ctx.progress(30);
     const drama = await ctx.proxiedFetcher(targetDrama.url, {
       baseUrl: kissasianBase
@@ -2951,8 +3434,7 @@ const kissAsianScraper = makeSourcerer({
     const dramaPage = load(drama);
     const episodes = getEpisodes(dramaPage);
     const targetEpisode = episodes[0];
-    if (!(targetEpisode == null ? void 0 : targetEpisode.url))
-      throw new NotFoundError("Episode not found");
+    if (!(targetEpisode == null ? void 0 : targetEpisode.url)) throw new NotFoundError("Episode not found");
     ctx.progress(70);
     const embeds = await getEmbeds$1(ctx, targetEpisode);
     return {
@@ -2968,7 +3450,7 @@ async function getVideoSources(ctx, id, media) {
     path = `/v1/movies/view`;
   }
   const data2 = await ctx.fetcher(path, {
-    baseUrl: baseUrl$2,
+    baseUrl: baseUrl$5,
     query: { expand: "streams,subtitles", id }
   });
   return data2;
@@ -2986,12 +3468,11 @@ async function getVideo(ctx, id, media) {
   let captions = [];
   for (const sub of data2.subtitles) {
     const language = labelToLanguageCode(sub.language);
-    if (!language)
-      continue;
+    if (!language) continue;
     captions.push({
       id: sub.url,
       type: "vtt",
-      url: `${baseUrl$2}${sub.url}`,
+      url: `${baseUrl$5}${sub.url}`,
       hasCorsRestrictions: false,
       language
     });
@@ -3002,11 +3483,11 @@ async function getVideo(ctx, id, media) {
     captions
   };
 }
-const baseUrl$2 = "https://lmscript.xyz";
+const baseUrl$5 = "https://lmscript.xyz";
 async function searchAndFindMedia$1(ctx, media) {
   if (media.type === "show") {
     const searchRes = await ctx.fetcher(`/v1/shows`, {
-      baseUrl: baseUrl$2,
+      baseUrl: baseUrl$5,
       query: { "filters[q]": media.title }
     });
     const results = searchRes.items;
@@ -3015,7 +3496,7 @@ async function searchAndFindMedia$1(ctx, media) {
   }
   if (media.type === "movie") {
     const searchRes = await ctx.fetcher(`/v1/movies`, {
-      baseUrl: baseUrl$2,
+      baseUrl: baseUrl$5,
       query: { "filters[q]": media.title }
     });
     const results = searchRes.items;
@@ -3030,28 +3511,24 @@ async function scrape(ctx, media, result) {
     id = result.id_movie;
   } else if (media.type === "show") {
     const data2 = await ctx.fetcher(`/v1/shows`, {
-      baseUrl: baseUrl$2,
+      baseUrl: baseUrl$5,
       query: { expand: "episodes", id: result.id_show }
     });
     const episode = (_a = data2.episodes) == null ? void 0 : _a.find((v) => {
       return Number(v.season) === Number(media.season.number) && Number(v.episode) === Number(media.episode.number);
     });
-    if (episode)
-      id = episode.id;
+    if (episode) id = episode.id;
   }
-  if (id === null)
-    throw new NotFoundError("Not found");
+  if (id === null) throw new NotFoundError("Not found");
   const video = await getVideo(ctx, id, media);
   return video;
 }
-async function universalScraper$7(ctx) {
+async function universalScraper$8(ctx) {
   const lookmovieData = await searchAndFindMedia$1(ctx, ctx.media);
-  if (!lookmovieData)
-    throw new NotFoundError("Media not found");
+  if (!lookmovieData) throw new NotFoundError("Media not found");
   ctx.progress(30);
   const video = await scrape(ctx, ctx.media, lookmovieData);
-  if (!video.playlist)
-    throw new NotFoundError("No video found");
+  if (!video.playlist) throw new NotFoundError("No video found");
   ctx.progress(60);
   return {
     embeds: [],
@@ -3072,8 +3549,43 @@ const lookmovieScraper = makeSourcerer({
   disabled: true,
   rank: 50,
   flags: [flags.IP_LOCKED],
-  scrapeShow: universalScraper$7,
-  scrapeMovie: universalScraper$7
+  scrapeShow: universalScraper$8,
+  scrapeMovie: universalScraper$8
+});
+async function comboScraper$2(ctx) {
+  var _a;
+  const query = {
+    title: ctx.media.title,
+    releaseYear: ctx.media.releaseYear,
+    tmdbId: ctx.media.tmdbId,
+    imdbId: ctx.media.imdbId,
+    type: ctx.media.type,
+    ...ctx.media.type === "show" && {
+      season: ctx.media.season.number.toString(),
+      episode: ctx.media.episode.number.toString()
+    }
+  };
+  const res = await ctx.fetcher("https://api.nsbx.ru/status");
+  if (((_a = res.providers) == null ? void 0 : _a.length) === 0) throw new NotFoundError("No providers available");
+  if (!res.endpoint) throw new Error("No endpoint returned");
+  const embeds = res.providers.map((provider) => {
+    return {
+      embedId: provider,
+      url: `${JSON.stringify(query)}|${res.endpoint}`
+    };
+  });
+  return {
+    embeds
+  };
+}
+const nsbxScraper = makeSourcerer({
+  id: "nsbx",
+  name: "NSBX",
+  rank: 129,
+  flags: [flags.CORS_ALLOWED],
+  disabled: false,
+  scrapeMovie: comboScraper$2,
+  scrapeShow: comboScraper$2
 });
 const remotestreamBase = atob("aHR0cHM6Ly9mc2IuOG1ldDNkdGpmcmNxY2hjb25xcGtsd3hzeGIyb2N1bWMuc3RyZWFt");
 const origin = "https://remotestre.am";
@@ -3149,7 +3661,7 @@ const remotestreamScraper = makeSourcerer({
     };
   }
 });
-async function comboScraper(ctx) {
+async function comboScraper$1(ctx) {
   const searchQuery = {
     module: "Search4",
     page: "1",
@@ -3162,8 +3674,7 @@ async function comboScraper(ctx) {
   const showboxEntry = searchRes.find(
     (res) => compareTitle(res.title, ctx.media.title) && res.year === Number(ctx.media.releaseYear)
   );
-  if (!showboxEntry)
-    throw new NotFoundError("No entry found");
+  if (!showboxEntry) throw new NotFoundError("No entry found");
   const id = showboxEntry.id;
   const season = ctx.media.type === "show" ? ctx.media.season.number : "";
   const episode = ctx.media.type === "show" ? ctx.media.episode.number : "";
@@ -3182,8 +3693,113 @@ const showboxScraper = makeSourcerer({
   rank: 150,
   disabled: true,
   flags: [flags.CORS_ALLOWED, flags.CF_BLOCKED],
-  scrapeShow: comboScraper,
-  scrapeMovie: comboScraper
+  scrapeShow: comboScraper$1,
+  scrapeMovie: comboScraper$1
+});
+const baseUrl$4 = "https://tugaflix.best/";
+function parseSearch(page) {
+  const results = [];
+  const $ = load(page);
+  $(".items .poster").each((_, element) => {
+    var _a;
+    const $link = $(element).find("a");
+    const url = $link.attr("href");
+    const [, title, year] = ((_a = $link.attr("title")) == null ? void 0 : _a.match(/^(.*?)\s*(?:\((\d{4})\))?\s*$/)) || [];
+    if (!title || !url) return;
+    results.push({ title, year: year ? parseInt(year, 10) : void 0, url });
+  });
+  return results;
+}
+const tugaflixScraper = makeSourcerer({
+  id: "tugaflix",
+  name: "Tugaflix",
+  rank: 73,
+  flags: [flags.IP_LOCKED],
+  scrapeMovie: async (ctx) => {
+    var _a;
+    const searchResults = parseSearch(
+      await ctx.proxiedFetcher("/filmes/", {
+        baseUrl: baseUrl$4,
+        query: {
+          s: ctx.media.title
+        }
+      })
+    );
+    if (searchResults.length === 0) throw new NotFoundError("No watchable item found");
+    const url = (_a = searchResults.find((x) => x && compareMedia(ctx.media, x.title, x.year))) == null ? void 0 : _a.url;
+    if (!url) throw new NotFoundError("No watchable item found");
+    const videoPage = await ctx.proxiedFetcher(url, {
+      method: "POST",
+      body: new URLSearchParams({ play: "" })
+    });
+    const $ = load(videoPage);
+    const embeds = [];
+    for (const element of $(".play a")) {
+      const embedUrl = $(element).attr("href");
+      if (!embedUrl) continue;
+      const embedPage = await ctx.proxiedFetcher.full(
+        embedUrl.startsWith("https://") ? embedUrl : `https://${embedUrl}`
+      );
+      const finalUrl = load(embedPage.body)('a:contains("Download Filme")').attr("href");
+      if (!finalUrl) continue;
+      if (finalUrl.includes("streamtape")) {
+        embeds.push({
+          embedId: "streamtape",
+          url: finalUrl
+        });
+      } else if (finalUrl.includes("dood")) {
+        embeds.push({
+          embedId: "dood",
+          url: finalUrl
+        });
+      }
+    }
+    return {
+      embeds
+    };
+  },
+  scrapeShow: async (ctx) => {
+    var _a;
+    const searchResults = parseSearch(
+      await ctx.proxiedFetcher("/series/", {
+        baseUrl: baseUrl$4,
+        query: {
+          s: ctx.media.title
+        }
+      })
+    );
+    if (searchResults.length === 0) throw new NotFoundError("No watchable item found");
+    const url = (_a = searchResults.find((x) => x && compareMedia(ctx.media, x.title, x.year))) == null ? void 0 : _a.url;
+    if (!url) throw new NotFoundError("No watchable item found");
+    const s = ctx.media.season.number < 10 ? `0${ctx.media.season.number}` : ctx.media.season.number.toString();
+    const e = ctx.media.episode.number < 10 ? `0${ctx.media.episode.number}` : ctx.media.episode.number.toString();
+    const videoPage = await ctx.proxiedFetcher(url, {
+      method: "POST",
+      body: new URLSearchParams({ [`S${s}E${e}`]: "" })
+    });
+    const embedUrl = load(videoPage)('iframe[name="player"]').attr("src");
+    if (!embedUrl) throw new Error("Failed to find iframe");
+    const playerPage = await ctx.proxiedFetcher(embedUrl.startsWith("https:") ? embedUrl : `https:${embedUrl}`, {
+      method: "POST",
+      body: new URLSearchParams({ submit: "" })
+    });
+    const embeds = [];
+    const finalUrl = load(playerPage)('a:contains("Download Episodio")').attr("href");
+    if (finalUrl == null ? void 0 : finalUrl.includes("streamtape")) {
+      embeds.push({
+        embedId: "streamtape",
+        url: finalUrl
+      });
+    } else if (finalUrl == null ? void 0 : finalUrl.includes("dood")) {
+      embeds.push({
+        embedId: "dood",
+        url: finalUrl
+      });
+    }
+    return {
+      embeds
+    };
+  }
 });
 function decodeSrc(encoded, seed) {
   let decoded = "";
@@ -3225,17 +3841,17 @@ async function getVidSrcEmbeds(ctx, startingURL) {
         referer: vidsrcBase
       }
     });
-    const embed = {
+    const embed2 = {
       embedId: "",
       url: finalUrl
     };
     const parsedUrl = new URL(finalUrl);
     switch (parsedUrl.host) {
       case "vidsrc.stream":
-        embed.embedId = vidsrcembedScraper.id;
+        embed2.embedId = vidsrcembedScraper.id;
         break;
       case "streambucket.net":
-        embed.embedId = streambucketScraper.id;
+        embed2.embedId = streambucketScraper.id;
         break;
       case "2embed.cc":
       case "www.2embed.cc":
@@ -3245,8 +3861,8 @@ async function getVidSrcEmbeds(ctx, startingURL) {
       default:
         throw new Error(`Failed to find VidSrc embed source for ${finalUrl}`);
     }
-    if (embed.embedId !== "") {
-      embeds.push(embed);
+    if (embed2.embedId !== "") {
+      embeds.push(embed2);
     }
   }
   return embeds;
@@ -3373,25 +3989,25 @@ const zoeBase = "https://zoechip.cc";
 async function formatSource(ctx, source) {
   const link = await getZoeChipSourceURL(ctx, source.episodeId);
   if (link) {
-    const embed = {
+    const embed2 = {
       embedId: "",
       url: link
     };
     const parsedUrl = new URL(link);
     switch (parsedUrl.host) {
       case "rabbitstream.net":
-        embed.embedId = upcloudScraper.id;
+        embed2.embedId = upcloudScraper.id;
         break;
       case "upstream.to":
-        embed.embedId = upstreamScraper.id;
+        embed2.embedId = upstreamScraper.id;
         break;
       case "mixdrop.co":
-        embed.embedId = mixdropScraper.id;
+        embed2.embedId = mixdropScraper.id;
         break;
       default:
         return null;
     }
-    return embed;
+    return embed2;
   }
 }
 async function createZoeChipStreamData(ctx, id) {
@@ -3514,6 +4130,89 @@ const zoechipScraper = makeSourcerer({
   scrapeMovie,
   scrapeShow
 });
+const providers = [
+  {
+    id: "autoembed-english",
+    rank: 10
+  },
+  {
+    id: "autoembed-hindi",
+    rank: 9
+  },
+  {
+    id: "autoembed-tamil",
+    rank: 8
+  },
+  {
+    id: "autoembed-telugu",
+    rank: 7
+  },
+  {
+    id: "autoembed-bengali",
+    rank: 6
+  }
+];
+function embed(provider) {
+  return makeEmbed({
+    id: provider.id,
+    name: provider.id.charAt(0).toUpperCase() + provider.id.slice(1),
+    rank: provider.rank,
+    async scrape(ctx) {
+      return {
+        stream: [
+          {
+            id: "primary",
+            type: "hls",
+            playlist: ctx.url,
+            flags: [flags.CORS_ALLOWED],
+            captions: []
+          }
+        ]
+      };
+    }
+  });
+}
+const [
+  autoembedEnglishScraper,
+  autoembedHindiScraper,
+  autoembedBengaliScraper,
+  autoembedTamilScraper,
+  autoembedTeluguScraper
+] = providers.map(embed);
+const evalCodeRegex$1 = /eval\((.*)\)/g;
+const mp4Regex = /https?:\/\/.*\.mp4/;
+const bflixScraper = makeEmbed({
+  id: "bflix",
+  name: "bFlix",
+  rank: 113,
+  scrape: async (ctx) => {
+    const mainPage = await ctx.proxiedFetcher(ctx.url);
+    const evalCode = mainPage.match(evalCodeRegex$1);
+    if (!evalCode) throw new Error("Failed to find eval code");
+    const unpacked = unpack(evalCode[0]);
+    const file = unpacked.match(mp4Regex);
+    if (!(file == null ? void 0 : file[0])) throw new Error("Failed to find file");
+    return {
+      stream: [
+        {
+          id: "primary",
+          type: "file",
+          flags: [],
+          captions: [],
+          qualities: {
+            unknown: {
+              type: "mp4",
+              url: file[0]
+            }
+          },
+          headers: {
+            Referer: "https://bflix.gs/"
+          }
+        }
+      ]
+    };
+  }
+});
 const referer$2 = "https://ridomovies.tv/";
 const closeLoadScraper = makeEmbed({
   id: "closeload",
@@ -3532,8 +4231,7 @@ const closeLoadScraper = makeEmbed({
       const label = track.attr("label") ?? "";
       const language = labelToLanguageCode(label);
       const captionType = getCaptionTypeFromUrl(url2);
-      if (!language || !captionType)
-        return null;
+      if (!language || !captionType) return null;
       return {
         id: url2,
         language,
@@ -3547,13 +4245,11 @@ const closeLoadScraper = makeEmbed({
       const script = iframeRes$(el);
       return (script.attr("type") === "text/javascript" && ((_a2 = script.html()) == null ? void 0 : _a2.includes("p,a,c,k,e,d"))) ?? false;
     }).html();
-    if (!evalCode)
-      throw new Error("Couldn't find eval code");
+    if (!evalCode) throw new Error("Couldn't find eval code");
     const decoded = unpack(evalCode);
     const regexPattern = /var\s+(\w+)\s*=\s*"([^"]+)";/g;
     const base64EncodedUrl = (_a = regexPattern.exec(decoded)) == null ? void 0 : _a[2];
-    if (!base64EncodedUrl)
-      throw new NotFoundError("Unable to find source url");
+    if (!base64EncodedUrl) throw new NotFoundError("Unable to find source url");
     const url = atob(base64EncodedUrl);
     return {
       stream: [
@@ -3577,7 +4273,7 @@ const fileRegex = /file:"(.*?)"/g;
 const fileMoonScraper = makeEmbed({
   id: "filemoon",
   name: "Filemoon",
-  rank: 400,
+  rank: 300,
   scrape: async (ctx) => {
     const embedRes = await ctx.proxiedFetcher(ctx.url, {
       headers: {
@@ -3586,12 +4282,10 @@ const fileMoonScraper = makeEmbed({
     });
     const embedHtml = load(embedRes);
     const evalCode = embedHtml("script").text().match(evalCodeRegex);
-    if (!evalCode)
-      throw new Error("Failed to find eval code");
+    if (!evalCode) throw new Error("Failed to find eval code");
     const unpacked = unpack(evalCode[0]);
     const file = fileRegex.exec(unpacked);
-    if (!(file == null ? void 0 : file[1]))
-      throw new Error("Failed to find file");
+    if (!(file == null ? void 0 : file[1])) throw new Error("Failed to find file");
     const url = new URL(ctx.url);
     const subtitlesLink = url.searchParams.get("sub.info");
     const captions = [];
@@ -3600,8 +4294,7 @@ const fileMoonScraper = makeEmbed({
       for (const caption of captionsResult) {
         const language = labelToLanguageCode(caption.label);
         const captionType = getCaptionTypeFromUrl(caption.file);
-        if (!language || !captionType)
-          continue;
+        if (!language || !captionType) continue;
         captions.push({
           id: caption.file,
           url: caption.file,
@@ -3617,8 +4310,171 @@ const fileMoonScraper = makeEmbed({
           id: "primary",
           type: "hls",
           playlist: file[1],
-          flags: [],
+          flags: [flags.IP_LOCKED],
           captions
+        }
+      ]
+    };
+  }
+});
+const fileMoonMp4Scraper = makeEmbed({
+  id: "filemoon-mp4",
+  name: "Filemoon MP4",
+  rank: 400,
+  scrape: async (ctx) => {
+    const result = await fileMoonScraper.scrape(ctx);
+    if (!result.stream) throw new NotFoundError("Failed to find result");
+    if (result.stream[0].type !== "hls") throw new NotFoundError("Failed to find hls stream");
+    const url = result.stream[0].playlist.replace(/\/hls2\//, "/download/").replace(/\.m3u8/, ".mp4");
+    return {
+      stream: [
+        {
+          id: "primary",
+          type: "file",
+          qualities: {
+            unknown: {
+              type: "mp4",
+              url
+            }
+          },
+          flags: [flags.IP_LOCKED],
+          captions: result.stream[0].captions
+        }
+      ]
+    };
+  }
+});
+const hydraxScraper = makeEmbed({
+  id: "hydrax",
+  name: "Hydrax",
+  rank: 250,
+  async scrape(ctx) {
+    const embed2 = await ctx.proxiedFetcher(ctx.url);
+    const match = embed2.match(/PLAYER\(atob\("(.*?)"/);
+    if (!(match == null ? void 0 : match[1])) throw new Error("No Data Found");
+    ctx.progress(50);
+    const qualityMatch = embed2.match(/({"pieceLength.+?})/);
+    let qualityData = {};
+    if (qualityMatch == null ? void 0 : qualityMatch[1]) qualityData = JSON.parse(qualityMatch[1]);
+    const data2 = JSON.parse(atob(match[1]));
+    if (!data2.id || !data2.domain) throw new Error("Required values missing");
+    const domain = new URL((await ctx.proxiedFetcher.full(`https://${data2.domain}`)).finalUrl).hostname;
+    ctx.progress(100);
+    return {
+      stream: [
+        {
+          id: "primary",
+          type: "file",
+          qualities: {
+            ...(qualityData == null ? void 0 : qualityData.fullHd) && {
+              1080: {
+                type: "mp4",
+                url: `https://${domain}/whw${data2.id}`
+              }
+            },
+            ...(qualityData == null ? void 0 : qualityData.hd) && {
+              720: {
+                type: "mp4",
+                url: `https://${domain}/www${data2.id}`
+              }
+            },
+            ...(qualityData == null ? void 0 : qualityData.mHd) && {
+              480: {
+                type: "mp4",
+                url: `https://${domain}/${data2.id}`
+              }
+            },
+            360: {
+              type: "mp4",
+              url: `https://${domain}/${data2.id}`
+            }
+          },
+          headers: {
+            Referer: ctx.url.replace(new URL(ctx.url).hostname, "abysscdn.com")
+          },
+          captions: [],
+          flags: []
+        }
+      ]
+    };
+  }
+});
+const { AES, MD5 } = CryptoJS;
+function mahoaData(input, key2) {
+  const a = AES.encrypt(input, key2).toString();
+  const b = a.replace("U2FsdGVkX1", "").replace(/\//g, "|a").replace(/\+/g, "|b").replace(/\\=/g, "|c").replace(/\|/g, "-z");
+  return b;
+}
+function caesarShift(str, amount) {
+  let output = "";
+  for (let i = 0; i < str.length; i++) {
+    let c = str[i];
+    if (c.match(/[a-z]/i)) {
+      const code = str.charCodeAt(i);
+      if (code >= 65 && code <= 90) {
+        c = String.fromCharCode((code - 65 + amount) % 26 + 65);
+      } else if (code >= 97 && code <= 122) {
+        c = String.fromCharCode((code - 97 + amount) % 26 + 97);
+      }
+    }
+    output += c;
+  }
+  return output;
+}
+function stringToHex(tmp) {
+  let str = "";
+  for (let i = 0; i < tmp.length; i++) {
+    str += tmp[i].charCodeAt(0).toString(16);
+  }
+  return str;
+}
+function generateResourceToken(idUser, idFile, domainRef) {
+  const dataToken = stringToHex(
+    caesarShift(mahoaData(`Win32|${idUser}|${idFile}|${domainRef}`, MD5("plhq@@@2022").toString()), 22)
+  );
+  const resourceToken = `${dataToken}|${MD5(`${dataToken}plhq@@@22`).toString()}`;
+  return resourceToken;
+}
+const apiUrl = "https://api-post-iframe-rd.playm4u.xyz/api/playiframe";
+const playm4uNMScraper = makeEmbed({
+  id: "playm4u-nm",
+  name: "PlayM4U",
+  rank: 240,
+  scrape: async (ctx) => {
+    var _a, _b;
+    const mainPage$ = load(await ctx.proxiedFetcher(ctx.url));
+    const script = mainPage$(`script:contains("${apiUrl}")`).text();
+    if (!script) throw new Error("Failed to get script");
+    ctx.progress(50);
+    const domainRef = "https://ww2.m4ufree.tv";
+    const idFile = (_a = script.match(/var\s?idfile\s?=\s?"(.*)";/im)) == null ? void 0 : _a[1];
+    const idUser = (_b = script.match(/var\s?iduser\s?=\s?"(.*)";/im)) == null ? void 0 : _b[1];
+    if (!idFile || !idUser) throw new Error("Failed to get ids");
+    const charecters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789=+";
+    const apiRes = await ctx.proxiedFetcher(apiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        namekey: "playm4u03",
+        token: Array.from({ length: 100 }, () => charecters.charAt(Math.floor(Math.random() * charecters.length))).join(
+          ""
+        ),
+        referrer: domainRef,
+        data: generateResourceToken(idUser, idFile, domainRef)
+      })
+    });
+    if (!apiRes.data || apiRes.type !== "url-m3u8") throw new Error("Failed to get the stream");
+    ctx.progress(100);
+    return {
+      stream: [
+        {
+          id: "primary",
+          type: "hls",
+          playlist: apiRes.data,
+          captions: [],
+          flags: []
         }
       ]
     };
@@ -3638,8 +4494,7 @@ const ridooScraper = makeEmbed({
     });
     const regexPattern = /file:"([^"]+)"/g;
     const url = (_a = regexPattern.exec(res)) == null ? void 0 : _a[1];
-    if (!url)
-      throw new NotFoundError("Unable to find source url");
+    if (!url) throw new NotFoundError("Unable to find source url");
     return {
       stream: [
         {
@@ -3672,11 +4527,9 @@ const smashyStreamFScraper = makeEmbed({
         Referer: ctx.url
       }
     });
-    if (!res.sourceUrls[0])
-      throw new NotFoundError("No watchable item found");
+    if (!res.sourceUrls[0]) throw new NotFoundError("No watchable item found");
     const playlist = decode(res.sourceUrls[0]);
-    if (!playlist.includes(".m3u8"))
-      throw new Error("Failed to decode");
+    if (!playlist.includes(".m3u8")) throw new Error("Failed to decode");
     const captions = ((_b = (_a = res.subtitles) == null ? void 0 : _a.match(/\[([^\]]+)\](https?:\/\/\S+?)(?=,\[|$)/g)) == null ? void 0 : _b.map((entry) => {
       const match = entry.match(/\[([^\]]+)\](https?:\/\/\S+?)(?=,\[|$)/);
       if (match) {
@@ -3684,8 +4537,7 @@ const smashyStreamFScraper = makeEmbed({
         if (language && url) {
           const languageCode = labelToLanguageCode(language.replace(/ - .*/, ""));
           const captionType = getCaptionTypeFromUrl(url);
-          if (!languageCode || !captionType)
-            return null;
+          if (!languageCode || !captionType) return null;
           return {
             id: url,
             url: url.replace(",", ""),
@@ -3729,13 +4581,11 @@ const streamtapeScraper = makeEmbed({
   rank: 160,
   async scrape(ctx) {
     var _a;
-    const embed = await ctx.proxiedFetcher(ctx.url);
-    const match = embed.match(/robotlink'\).innerHTML = (.*)'/);
-    if (!match)
-      throw new Error("No match found");
+    const embed2 = await ctx.proxiedFetcher(ctx.url);
+    const match = embed2.match(/robotlink'\).innerHTML = (.*)'/);
+    if (!match) throw new Error("No match found");
     const [fh, sh] = ((_a = match == null ? void 0 : match[1]) == null ? void 0 : _a.split("+ ('")) ?? [];
-    if (!fh || !sh)
-      throw new Error("No match found");
+    if (!fh || !sh) throw new Error("No match found");
     const url = `https:${fh == null ? void 0 : fh.replace(/'/g, "").trim()}${sh == null ? void 0 : sh.substring(3).trim()}`;
     return {
       stream: [
@@ -3767,12 +4617,10 @@ const streamvidScraper = makeEmbed({
   async scrape(ctx) {
     const streamRes = await ctx.proxiedFetcher(ctx.url);
     const packed = streamRes.match(packedRegex);
-    if (!packed)
-      throw new Error("streamvid packed not found");
+    if (!packed) throw new Error("streamvid packed not found");
     const unpacked = unpacker.unpack(packed[1]);
     const link = unpacked.match(linkRegex);
-    if (!link)
-      throw new Error("streamvid link not found");
+    if (!link) throw new Error("streamvid link not found");
     return {
       stream: [
         {
@@ -3833,8 +4681,7 @@ const getDecryptionKeys = async (ctx) => {
   const res = await ctx.proxiedFetcher("https://github.com/Ciarands/vidsrc-keys/blob/main/keys.json");
   const regex = /"rawLines":\s*\[([\s\S]*?)\]/;
   const rawLines = (_a = res.match(regex)) == null ? void 0 : _a[1];
-  if (!rawLines)
-    throw new Error("No keys found");
+  if (!rawLines) throw new Error("No keys found");
   const keys = JSON.parse(`${rawLines.substring(1).replace(/\\"/g, '"')}]`);
   return keys;
 };
@@ -3857,8 +4704,7 @@ const getFuTokenKey = async (ctx) => {
     }
   });
   const fuKey = (_a = fuTokenRes.match(/var\s+k\s*=\s*'([^']+)'/)) == null ? void 0 : _a[1];
-  if (!fuKey)
-    throw new Error("No fuKey found");
+  if (!fuKey) throw new Error("No fuKey found");
   const tokens = [];
   for (let i = 0; i < id.length; i += 1) {
     tokens.push(fuKey.charCodeAt(i % fuKey.length) + id.charCodeAt(i));
@@ -3886,8 +4732,7 @@ const vidplayScraper = makeEmbed({
         referer: ctx.url
       }
     });
-    if (typeof fileUrlRes.result === "number")
-      throw new Error("File not found");
+    if (typeof fileUrlRes.result === "number") throw new Error("File not found");
     const source = fileUrlRes.result.sources[0].file;
     const thumbnailSource = fileUrlRes.result.tracks.find((track) => track.kind === "thumbnails");
     let thumbnailTrack;
@@ -3905,8 +4750,7 @@ const vidplayScraper = makeEmbed({
       for (const caption of captionsResult) {
         const language = labelToLanguageCode(caption.label);
         const captionType = getCaptionTypeFromUrl(caption.file);
-        if (!language || !captionType)
-          continue;
+        if (!language || !captionType) continue;
         captions.push({
           id: caption.file,
           url: caption.file,
@@ -3922,7 +4766,7 @@ const vidplayScraper = makeEmbed({
           id: "primary",
           type: "hls",
           playlist: source,
-          flags: [],
+          flags: [flags.PROXY_BLOCKED],
           headers: {
             Referer: url.origin,
             Origin: url.origin
@@ -3939,8 +4783,7 @@ async function getVideowlUrlStream(ctx, decryptedId) {
   const sharePage = await ctx.proxiedFetcher("https://cloud.mail.ru/public/uaRH/2PYWcJRpH");
   const regex = /"videowl_view":\{"count":"(\d+)","url":"([^"]+)"\}/g;
   const videowlUrl = (_a = regex.exec(sharePage)) == null ? void 0 : _a[2];
-  if (!videowlUrl)
-    throw new NotFoundError("Failed to get videoOwlUrl");
+  if (!videowlUrl) throw new NotFoundError("Failed to get videoOwlUrl");
   return `${videowlUrl}/0p/${btoa(decryptedId)}.m3u8?${new URLSearchParams({
     double_encode: "1"
   })}`;
@@ -3952,8 +4795,7 @@ const warezcdnembedHlsScraper = makeEmbed({
   rank: 83,
   async scrape(ctx) {
     const decryptedId = await getDecryptedId(ctx);
-    if (!decryptedId)
-      throw new NotFoundError("can't get file id");
+    if (!decryptedId) throw new NotFoundError("can't get file id");
     const streamUrl = await getVideowlUrlStream(ctx, decryptedId);
     return {
       stream: [
@@ -3968,15 +4810,6 @@ const warezcdnembedHlsScraper = makeEmbed({
     };
   }
 });
-function makeCookieHeader(cookies) {
-  return Object.entries(cookies).map(([name, value]) => cookie.serialize(name, value)).join("; ");
-}
-function parseSetCookie(headerValue) {
-  const parsedCookies = setCookieParser.parse(headerValue, {
-    map: true
-  });
-  return parsedCookies;
-}
 const wootlyScraper = makeEmbed({
   id: "wootly",
   name: "wootly",
@@ -4013,8 +4846,7 @@ const wootlyScraper = makeEmbed({
     const scriptText = $("script").html() ?? "";
     const tk = (_a = scriptText.match(/tk=([^;]+)/)) == null ? void 0 : _a[0].replace(/tk=|["\s]/g, "");
     const vd = (_b = scriptText.match(/vd=([^,]+)/)) == null ? void 0 : _b[0].replace(/vd=|["\s]/g, "");
-    if (!tk || !vd)
-      throw new Error("wootly source not found");
+    if (!tk || !vd) throw new Error("wootly source not found");
     const url = await ctx.proxiedFetcher(`/grabd`, {
       baseUrl: baseUrl3,
       query: { t: tk, id: vd },
@@ -4023,8 +4855,7 @@ const wootlyScraper = makeEmbed({
         cookie: makeCookieHeader({ wooz: woozCookie, wootsses: wootssesCookie })
       }
     });
-    if (!url)
-      throw new Error("wootly source not found");
+    if (!url) throw new Error("wootly source not found");
     return {
       stream: [
         {
@@ -4043,13 +4874,13 @@ const wootlyScraper = makeEmbed({
     };
   }
 });
-const baseUrl$1 = "https://www.goojara.to";
+const baseUrl$3 = "https://www.goojara.to";
 const baseUrl2 = "https://ww1.goojara.to";
 async function getEmbeds(ctx, id) {
   const data2 = await ctx.fetcher.full(`/${id}`, {
     baseUrl: baseUrl2,
     headers: {
-      Referer: baseUrl$1,
+      Referer: baseUrl$3,
       cookie: ""
     },
     readHeaders: ["Set-Cookie"],
@@ -4099,7 +4930,7 @@ const headersData = {
 };
 async function searchAndFindMedia(ctx, media) {
   data = await ctx.fetcher(`/xhrr.php`, {
-    baseUrl: baseUrl$1,
+    baseUrl: baseUrl$3,
     headers: headersData,
     method: "POST",
     body: new URLSearchParams({ q: media.title })
@@ -4114,8 +4945,7 @@ async function searchAndFindMedia(ctx, media) {
     const type = typeDiv === "it" ? "show" : typeDiv === "im" ? "movie" : "";
     const year = yearMatch ? yearMatch[1] : "";
     const slug = (_a = $(element).find("a").attr("href")) == null ? void 0 : _a.split("/")[3];
-    if (!slug)
-      throw new NotFoundError("Not found");
+    if (!slug) throw new NotFoundError("Not found");
     if (media.type === type) {
       results.push({ title, year, slug, type });
     }
@@ -4129,7 +4959,7 @@ async function scrapeIds(ctx, media, result) {
     id = result.slug;
   } else if (media.type === "show") {
     data = await ctx.fetcher(`/${result.slug}`, {
-      baseUrl: baseUrl$1,
+      baseUrl: baseUrl$3,
       headers: headersData,
       method: "GET",
       query: { s: media.season.number.toString() }
@@ -4149,19 +4979,16 @@ async function scrapeIds(ctx, media, result) {
     });
     id = episodeId;
   }
-  if (id === null)
-    throw new NotFoundError("Not found");
+  if (id === null) throw new NotFoundError("Not found");
   const embeds = await getEmbeds(ctx, id);
   return embeds;
 }
-async function universalScraper$6(ctx) {
+async function universalScraper$7(ctx) {
   const goojaraData = await searchAndFindMedia(ctx, ctx.media);
-  if (!goojaraData)
-    throw new NotFoundError("Media not found");
+  if (!goojaraData) throw new NotFoundError("Media not found");
   ctx.progress(30);
   const embeds = await scrapeIds(ctx, ctx.media, goojaraData);
-  if ((embeds == null ? void 0 : embeds.length) === 0)
-    throw new NotFoundError("No embeds found");
+  if ((embeds == null ? void 0 : embeds.length) === 0) throw new NotFoundError("No embeds found");
   ctx.progress(60);
   return {
     embeds
@@ -4173,27 +5000,9 @@ const goojaraScraper = makeSourcerer({
   rank: 70,
   flags: [],
   disabled: true,
-  scrapeShow: universalScraper$6,
-  scrapeMovie: universalScraper$6
+  scrapeShow: universalScraper$7,
+  scrapeMovie: universalScraper$7
 });
-function getValidQualityFromString(quality) {
-  switch (quality.toLowerCase().replace("p", "")) {
-    case "360":
-      return "360";
-    case "480":
-      return "480";
-    case "720":
-      return "720";
-    case "1080":
-      return "1080";
-    case "2160":
-      return "4k";
-    case "4k":
-      return "4k";
-    default:
-      return "unknown";
-  }
-}
 function generateRandomFavs() {
   const randomHex = () => Math.floor(Math.random() * 16).toString(16);
   const generateSegment = (length) => Array.from({ length }, randomHex).join("");
@@ -4202,8 +5011,7 @@ function generateRandomFavs() {
   )}`;
 }
 function parseSubtitleLinks(inputString) {
-  if (!inputString || typeof inputString === "boolean")
-    return [];
+  if (!inputString || typeof inputString === "boolean") return [];
   const linksArray = inputString.split(",");
   const captions = [];
   linksArray.forEach((link) => {
@@ -4211,8 +5019,7 @@ function parseSubtitleLinks(inputString) {
     if (match) {
       const type = getCaptionTypeFromUrl(match[2]);
       const language = labelToLanguageCode(match[1]);
-      if (!type || !language)
-        return;
+      if (!type || !language) return;
       captions.push({
         id: match[2],
         language,
@@ -4225,8 +5032,7 @@ function parseSubtitleLinks(inputString) {
   return captions;
 }
 function parseVideoLinks(inputString) {
-  if (!inputString)
-    throw new NotFoundError("No video links found");
+  if (!inputString) throw new NotFoundError("No video links found");
   const linksArray = inputString.split(",");
   const result = {};
   linksArray.forEach((link) => {
@@ -4306,21 +5112,18 @@ async function getTranslatorId(url, id, ctx) {
   const response = await ctx.proxiedFetcher(url, {
     headers: baseHeaders
   });
-  if (response.includes(`data-translator_id="238"`))
-    return "238";
+  if (response.includes(`data-translator_id="238"`)) return "238";
   const functionName = ctx.media.type === "movie" ? "initCDNMoviesEvents" : "initCDNSeriesEvents";
   const regexPattern = new RegExp(`sof\\.tv\\.${functionName}\\(${id}, ([^,]+)`, "i");
   const match = response.match(regexPattern);
   const translatorId = match ? match[1] : null;
   return translatorId;
 }
-const universalScraper$5 = async (ctx) => {
+const universalScraper$6 = async (ctx) => {
   const result = await searchAndFindMediaId(ctx);
-  if (!result || !result.id)
-    throw new NotFoundError("No result found");
+  if (!result || !result.id) throw new NotFoundError("No result found");
   const translatorId = await getTranslatorId(result.url, result.id, ctx);
-  if (!translatorId)
-    throw new NotFoundError("No translator id found");
+  if (!translatorId) throw new NotFoundError("No translator id found");
   const { url: streamUrl, subtitle: streamSubtitle } = await getStream(result.id, translatorId, ctx);
   const parsedVideos = parseVideoLinks(streamUrl);
   const parsedSubtitles = parseSubtitleLinks(streamSubtitle);
@@ -4342,11 +5145,111 @@ const hdRezkaScraper = makeSourcerer({
   name: "HDRezka",
   rank: 120,
   flags: [flags.CORS_ALLOWED, flags.IP_LOCKED],
-  scrapeShow: universalScraper$5,
-  scrapeMovie: universalScraper$5
+  scrapeShow: universalScraper$6,
+  scrapeMovie: universalScraper$6
 });
-const nepuBase = "https://nepu.to";
-const nepuReferer = `${nepuBase}/`;
+let baseUrl$2 = "https://m4ufree.tv";
+const universalScraper$5 = async (ctx) => {
+  var _a, _b, _c;
+  const homePage = await ctx.proxiedFetcher.full(baseUrl$2);
+  baseUrl$2 = new URL(homePage.finalUrl).origin;
+  const searchSlug = ctx.media.title.replace(/'/g, "").replace(/!|@|%|\^|\*|\(|\)|\+|=|<|>|\?|\/|,|\.|:|;|'| |"|&|#|\[|\]|~|$|_/g, "-").replace(/-+-/g, "-").replace(/^-+|-+$/g, "").replace(/Ă¢â‚¬â€œ/g, "");
+  const searchPage$ = load(
+    await ctx.proxiedFetcher(`/search/${searchSlug}.html`, {
+      baseUrl: baseUrl$2,
+      query: {
+        type: ctx.media.type === "movie" ? "movie" : "tvs"
+      }
+    })
+  );
+  const searchResults = [];
+  searchPage$(".item").each((_, element) => {
+    var _a2;
+    const [, title, year] = ((_a2 = searchPage$(element).find(".imagecover a").attr("title")) == null ? void 0 : _a2.match(/^(.*?)\s*(?:\(?\s*(\d{4})(?:\s*-\s*\d{0,4})?\s*\)?)?\s*$/)) || [];
+    const url = searchPage$(element).find("a").attr("href");
+    if (!title || !url) return;
+    searchResults.push({ title, year: year ? parseInt(year, 10) : void 0, url });
+  });
+  const watchPageUrl = (_a = searchResults.find((x) => x && compareMedia(ctx.media, x.title, x.year))) == null ? void 0 : _a.url;
+  if (!watchPageUrl) throw new NotFoundError("No watchable item found");
+  ctx.progress(25);
+  const watchPage = await ctx.proxiedFetcher.full(watchPageUrl, {
+    baseUrl: baseUrl$2,
+    readHeaders: ["Set-Cookie"]
+  });
+  ctx.progress(50);
+  let watchPage$ = load(watchPage.body);
+  const csrfToken = (_c = (_b = watchPage$('script:contains("_token:")').html()) == null ? void 0 : _b.match(/_token:\s?'(.*)'/m)) == null ? void 0 : _c[1];
+  if (!csrfToken) throw new Error("Failed to find csrfToken");
+  const laravelSession = parseSetCookie(watchPage.headers.get("Set-Cookie") ?? "").laravel_session;
+  if (!(laravelSession == null ? void 0 : laravelSession.value)) throw new Error("Failed to find cookie");
+  const cookie2 = makeCookieHeader({ [laravelSession.name]: laravelSession.value });
+  if (ctx.media.type === "show") {
+    const s = ctx.media.season.number < 10 ? `0${ctx.media.season.number}` : ctx.media.season.number.toString();
+    const e = ctx.media.episode.number < 10 ? `0${ctx.media.episode.number}` : ctx.media.episode.number.toString();
+    const episodeToken = watchPage$(`button:contains("S${s}-E${e}")`).attr("idepisode");
+    if (!episodeToken) throw new Error("Failed to find episodeToken");
+    watchPage$ = load(
+      await ctx.proxiedFetcher("/ajaxtv", {
+        baseUrl: baseUrl$2,
+        method: "POST",
+        body: new URLSearchParams({
+          idepisode: episodeToken,
+          _token: csrfToken
+        }),
+        headers: {
+          cookie: cookie2
+        }
+      })
+    );
+  }
+  ctx.progress(75);
+  const embeds = [];
+  const sources = watchPage$("div.row.justify-content-md-center div.le-server").map((_, element) => {
+    const name = watchPage$(element).find("span").text().toLowerCase().replace("#", "");
+    const data2 = watchPage$(element).find("span").attr("data");
+    if (!data2 || !name) return null;
+    return { name, data: data2 };
+  }).get();
+  for (const source of sources) {
+    let embedId;
+    if (source.name === "m")
+      embedId = "playm4u-m";
+    else if (source.name === "nm") embedId = "playm4u-nm";
+    else if (source.name === "h") embedId = "hydrax";
+    else continue;
+    const iframePage$ = load(
+      await ctx.proxiedFetcher("/ajax", {
+        baseUrl: baseUrl$2,
+        method: "POST",
+        body: new URLSearchParams({
+          m4u: source.data,
+          _token: csrfToken
+        }),
+        headers: {
+          cookie: cookie2
+        }
+      })
+    );
+    const url = iframePage$("iframe").attr("src");
+    if (!url) continue;
+    ctx.progress(100);
+    embeds.push({ embedId, url });
+  }
+  return {
+    embeds
+  };
+};
+const m4uScraper = makeSourcerer({
+  id: "m4ufree",
+  name: "M4UFree",
+  rank: 125,
+  flags: [],
+  scrapeMovie: universalScraper$5,
+  scrapeShow: universalScraper$5
+});
+const nepuBase = "https://nepu.io";
+const nepuReferer = "https://nepu.to";
 const universalScraper$4 = async (ctx) => {
   const searchResultRequest = await ctx.proxiedFetcher("/ajax/posts", {
     baseUrl: nepuBase,
@@ -4356,16 +5259,12 @@ const universalScraper$4 = async (ctx) => {
   });
   const searchResult = JSON.parse(searchResultRequest);
   const show = searchResult.data.find((item) => {
-    if (!item)
-      return false;
-    if (ctx.media.type === "movie" && item.type !== "Movie")
-      return false;
-    if (ctx.media.type === "show" && item.type !== "Serie")
-      return false;
+    if (!item) return false;
+    if (ctx.media.type === "movie" && item.type !== "Movie") return false;
+    if (ctx.media.type === "show" && item.type !== "Serie") return false;
     return compareTitle(ctx.media.title, item.name);
   });
-  if (!show)
-    throw new NotFoundError("No watchable item found");
+  if (!show) throw new NotFoundError("No watchable item found");
   let videoUrl = show.url;
   if (ctx.media.type === "show") {
     videoUrl = `${show.url}/season/${ctx.media.season.number}/episode/${ctx.media.episode.number}`;
@@ -4375,16 +5274,14 @@ const universalScraper$4 = async (ctx) => {
   });
   const videoPage$ = load(videoPage);
   const embedId = videoPage$("a[data-embed]").attr("data-embed");
-  if (!embedId)
-    throw new NotFoundError("No embed found.");
+  if (!embedId) throw new NotFoundError("No embed found.");
   const playerPage = await ctx.proxiedFetcher("/ajax/embed", {
     method: "POST",
     baseUrl: nepuBase,
     body: new URLSearchParams({ id: embedId })
   });
   const streamUrl = playerPage.match(/"file":"(http[^"]+)"/);
-  if (!streamUrl)
-    throw new NotFoundError("No stream found.");
+  if (!streamUrl) throw new NotFoundError("No stream found.");
   return {
     embeds: [],
     stream: [
@@ -4393,11 +5290,11 @@ const universalScraper$4 = async (ctx) => {
         captions: [],
         playlist: streamUrl[1],
         type: "hls",
-        flags: [],
         headers: {
-          Origin: nepuBase,
-          Referer: nepuReferer
-        }
+          Origin: nepuReferer,
+          Referer: `${nepuReferer}/`
+        },
+        flags: []
       }
     ]
   };
@@ -4406,10 +5303,64 @@ const nepuScraper = makeSourcerer({
   id: "nepu",
   name: "Nepu",
   rank: 80,
-  flags: [],
   disabled: true,
+  flags: [],
   scrapeMovie: universalScraper$4,
   scrapeShow: universalScraper$4
+});
+const baseUrl$1 = "https://w1.nites.is";
+async function comboScraper(ctx) {
+  var _a;
+  const searchPage = await ctx.proxiedFetcher("/wp-admin/admin-ajax.php", {
+    baseUrl: baseUrl$1,
+    method: "POST",
+    body: new URLSearchParams({
+      action: "ajax_pagination",
+      query_vars: "mixed",
+      search: ctx.media.title
+    })
+  });
+  const $search = load(searchPage);
+  const searchResults = [];
+  $search("li").each((_, element) => {
+    const title = $search(element).find(".entry-title").first().text().trim();
+    const year = parseInt($search(element).find(".year").first().text().trim(), 10);
+    const url2 = $search(element).find(".lnk-blk").attr("href");
+    if (!title || !year || !url2) return;
+    searchResults.push({ title, year, url: url2 });
+  });
+  let watchPageUrl = (_a = searchResults.find((x) => x && compareMedia(ctx.media, x.title, x.year))) == null ? void 0 : _a.url;
+  if (!watchPageUrl) throw new NotFoundError("No watchable item found");
+  if (ctx.media.type === "show") {
+    const match = watchPageUrl.match(/\/series\/([^/]+)\/?/);
+    if (!match) throw new Error("Failed to parse watch page url");
+    watchPageUrl = watchPageUrl.replace(
+      `/series/${match[1]}`,
+      `/episode/${match[1]}-${ctx.media.season.number}x${ctx.media.episode.number}`
+    );
+  }
+  const watchPage = load(await ctx.proxiedFetcher(watchPageUrl));
+  const embedUrl = watchPage('ul.bx-lst li a:contains("- Bflix")').closest("aside").next("div.video-options").find("iframe").attr("data-lazy-src");
+  if (!embedUrl) throw new Error("Failed to find embed url");
+  const embedPage = load(await ctx.proxiedFetcher(embedUrl));
+  const url = embedPage("iframe").attr("src");
+  if (!url) throw new Error("Failed to find embed url");
+  return {
+    embeds: [
+      {
+        embedId: "bflix",
+        url
+      }
+    ]
+  };
+}
+const nitesScraper = makeSourcerer({
+  id: "nites",
+  name: "Nites",
+  rank: 90,
+  flags: [],
+  scrapeMovie: comboScraper,
+  scrapeShow: comboScraper
 });
 const primewireBase = "https://www.primewire.tf";
 const primewireApiKey = atob("bHpRUHNYU0tjRw==");
@@ -5697,12 +6648,10 @@ async function search(ctx, imdbId) {
 async function getStreams(title) {
   const titlePage = load(title);
   const userData = titlePage("#user-data").attr("v");
-  if (!userData)
-    throw new NotFoundError("No user data found");
+  if (!userData) throw new NotFoundError("No user data found");
   const links = getLinks(userData);
   const embeds = [];
-  if (!links)
-    throw new NotFoundError("No links found");
+  if (!links) throw new NotFoundError("No links found");
   for (const link in links) {
     if (link.includes(link)) {
       const element = titlePage(`.propper-link[link_version='${link}']`);
@@ -5736,8 +6685,7 @@ async function getStreams(title) {
         default:
           embedId = null;
       }
-      if (!embedId)
-        continue;
+      if (!embedId) continue;
       embeds.push({
         url: `${primewireBase}/links/go/${links[link]}`,
         embedId
@@ -5752,8 +6700,7 @@ const primewireScraper = makeSourcerer({
   rank: 110,
   flags: [flags.CORS_ALLOWED],
   async scrapeMovie(ctx) {
-    if (!ctx.media.imdbId)
-      throw new Error("No imdbId provided");
+    if (!ctx.media.imdbId) throw new Error("No imdbId provided");
     const searchResult = await search(ctx, ctx.media.imdbId);
     const title = await ctx.proxiedFetcher(`movie/${searchResult}`, {
       baseUrl: primewireBase
@@ -5765,8 +6712,7 @@ const primewireScraper = makeSourcerer({
   },
   async scrapeShow(ctx) {
     var _a;
-    if (!ctx.media.imdbId)
-      throw new Error("No imdbId provided");
+    if (!ctx.media.imdbId) throw new Error("No imdbId provided");
     const searchResult = await search(ctx, ctx.media.imdbId);
     const season = await ctx.proxiedFetcher(`tv/${searchResult}`, {
       baseUrl: primewireBase
@@ -5775,8 +6721,7 @@ const primewireScraper = makeSourcerer({
     const episodeLink = (_a = seasonPage(`.show_season[data-id='${ctx.media.season.number}'] > div > a`).toArray().find((link) => {
       return link.attribs.href.includes(`-episode-${ctx.media.episode.number}`);
     })) == null ? void 0 : _a.attribs.href;
-    if (!episodeLink)
-      throw new NotFoundError("No episode links found");
+    if (!episodeLink) throw new NotFoundError("No episode links found");
     const title = await ctx.proxiedFetcher(episodeLink, {
       baseUrl: primewireBase
     });
@@ -5802,8 +6747,7 @@ const universalScraper$3 = async (ctx) => {
     return { name, year, fullSlug };
   });
   const targetMedia = mediaData.find((m) => m.name === ctx.media.title && m.year === ctx.media.releaseYear.toString());
-  if (!(targetMedia == null ? void 0 : targetMedia.fullSlug))
-    throw new NotFoundError("No watchable item found");
+  if (!(targetMedia == null ? void 0 : targetMedia.fullSlug)) throw new NotFoundError("No watchable item found");
   let iframeSourceUrl = `/${targetMedia.fullSlug}/videos`;
   if (ctx.media.type === "show") {
     const showPageResult = await ctx.proxiedFetcher(`/${targetMedia.fullSlug}`, {
@@ -5816,8 +6760,7 @@ const universalScraper$3 = async (ctx) => {
     );
     const matches = [...showPageResult.matchAll(regexPattern)];
     const episodeIds = matches.map((match) => match[1]);
-    if (episodeIds.length === 0)
-      throw new NotFoundError("No watchable item found");
+    if (episodeIds.length === 0) throw new NotFoundError("No watchable item found");
     const episodeId = episodeIds.at(-1);
     iframeSourceUrl = `/episodes/${episodeId}/videos`;
   }
@@ -5826,8 +6769,7 @@ const universalScraper$3 = async (ctx) => {
   });
   const iframeSource$ = load(iframeSource.data[0].url);
   const iframeUrl = iframeSource$("iframe").attr("data-src");
-  if (!iframeUrl)
-    throw new NotFoundError("No watchable item found");
+  if (!iframeUrl) throw new NotFoundError("No watchable item found");
   const embeds = [];
   if (iframeUrl.includes("closeload")) {
     embeds.push({
@@ -5854,16 +6796,16 @@ const ridooMoviesScraper = makeSourcerer({
   scrapeShow: universalScraper$3
 });
 const universalScraper$2 = async (ctx) => {
-  const query = ctx.media.type === "movie" ? `?tmdb=${ctx.media.tmdbId}` : `?tmdbId=${ctx.media.tmdbId}&season=${ctx.media.season.number}&episode=${ctx.media.episode.number}`;
+  const query = ctx.media.type === "movie" ? `?tmdb=${ctx.media.tmdbId}` : `?tmdb=${ctx.media.tmdbId}&season=${ctx.media.season.number}&episode=${ctx.media.episode.number}`;
   return {
     embeds: [
       {
         embedId: smashyStreamFScraper.id,
-        url: `https://embed.smashystream.com/video1dn.php${query}`
+        url: `https://embed.smashystream.com/videofeee.php${query}`
       },
       {
         embedId: smashyStreamOScraper.id,
-        url: `https://embed.smashystream.com/videoop.php${query}`
+        url: `https://embed.smashystream.com/shortmoviec.php${query}`
       }
     ]
   };
@@ -5872,6 +6814,7 @@ const smashyStreamScraper = makeSourcerer({
   id: "smashystream",
   name: "SmashyStream",
   rank: 30,
+  disabled: true,
   flags: [flags.CORS_ALLOWED],
   scrapeMovie: universalScraper$2,
   scrapeShow: universalScraper$2
@@ -5886,8 +6829,7 @@ const universalScraper$1 = async (ctx) => {
   });
   const searchResult$ = load(searchResult);
   let showLink = searchResult$("a").filter((_, el) => searchResult$(el).text() === ctx.media.title).attr("href");
-  if (!showLink)
-    throw new NotFoundError("Content not found");
+  if (!showLink) throw new NotFoundError("Content not found");
   if (ctx.media.type === "show") {
     const seasonNumber = ctx.media.season.number;
     const episodeNumber = ctx.media.episode.number;
@@ -5899,17 +6841,13 @@ const universalScraper$1 = async (ctx) => {
       episodes.find((el) => parseInt(showPage$(el).text().split(".")[0], 10) === episodeNumber)
     ).attr("href");
   }
-  if (!showLink)
-    throw new NotFoundError("Content not found");
+  if (!showLink) throw new NotFoundError("Content not found");
   const contentPage = await ctx.proxiedFetcher(showLink, { baseUrl });
   const contentPage$ = load(contentPage);
   const pass = contentPage$("#hId").attr("value");
-  const param = contentPage$("#divU").text();
-  if (!pass || !param)
-    throw new NotFoundError("Content not found");
+  if (!pass) throw new NotFoundError("Content not found");
   const formData = new URLSearchParams();
   formData.append("pass", pass);
-  formData.append("param", param);
   formData.append("e2", "0");
   formData.append("server", "0");
   const infoEndpoint = ctx.media.type === "show" ? "/home/index/getEInfoAjax" : "/home/index/getMInfoAjax";
@@ -5932,8 +6870,7 @@ const universalScraper$1 = async (ctx) => {
     } else {
       language = sub.name;
     }
-    if (!language)
-      continue;
+    if (!language) continue;
     captions.push({
       id: sub.path,
       url: sub.path,
@@ -5947,17 +6884,19 @@ const universalScraper$1 = async (ctx) => {
     stream: [
       {
         id: "primary",
-        playlist: streamResJson.val,
+        playlist: `${baseUrl}/${streamResJson.val}`,
         type: "hls",
-        flags: [flags.IP_LOCKED],
+        proxyDepth: 2,
+        flags: [],
         captions
       },
       ...streamResJson.val_bak ? [
         {
           id: "backup",
-          playlist: streamResJson.val_bak,
+          playlist: `${baseUrl}/${streamResJson.val_bak}`,
           type: "hls",
-          flags: [flags.IP_LOCKED],
+          proxyDepth: 2,
+          flags: [],
           captions
         }
       ] : []
@@ -5967,8 +6906,8 @@ const universalScraper$1 = async (ctx) => {
 const soaperTvScraper = makeSourcerer({
   id: "soapertv",
   name: "SoaperTV",
-  rank: 115,
-  flags: [flags.IP_LOCKED],
+  rank: 126,
+  flags: [],
   scrapeMovie: universalScraper$1,
   scrapeShow: universalScraper$1
 });
@@ -5986,16 +6925,14 @@ const universalScraper = async (ctx) => {
   });
   const mainPage$ = load(mainPage);
   const dataId = mainPage$("a[data-id]").attr("data-id");
-  if (!dataId)
-    throw new Error("No data-id found");
+  if (!dataId) throw new Error("No data-id found");
   const sources = await ctx.proxiedFetcher(`/ajax/embed/episode/${dataId}/sources`, {
     baseUrl: vidSrcToBase,
     headers: {
       referer
     }
   });
-  if (sources.status !== 200)
-    throw new Error("No sources found");
+  if (sources.status !== 200) throw new Error("No sources found");
   const embeds = [];
   const embedArr = [];
   for (const source of sources.result) {
@@ -6020,12 +6957,17 @@ const universalScraper = async (ctx) => {
       const fullUrl = new URL(embedObj.url);
       const urlWithSubtitles = (_a = embedArr.find((v) => v.source === "Vidplay" && v.url.includes("sub.info"))) == null ? void 0 : _a.url;
       const subtitleUrl = urlWithSubtitles ? new URL(urlWithSubtitles).searchParams.get("sub.info") : null;
-      if (subtitleUrl)
-        fullUrl.searchParams.set("sub.info", subtitleUrl);
-      embeds.push({
-        embedId: "filemoon",
-        url: fullUrl.toString()
-      });
+      if (subtitleUrl) fullUrl.searchParams.set("sub.info", subtitleUrl);
+      embeds.push(
+        {
+          embedId: "filemoon",
+          url: fullUrl.toString()
+        },
+        {
+          embedId: "filemoon-mp4",
+          url: fullUrl.toString()
+        }
+      );
     }
   }
   return {
@@ -6037,7 +6979,7 @@ const vidSrcToScraper = makeSourcerer({
   name: "VidSrcTo",
   scrapeMovie: universalScraper,
   scrapeShow: universalScraper,
-  flags: [],
+  flags: [flags.PROXY_BLOCKED],
   rank: 130
 });
 const warezcdnScraper = makeSourcerer({
@@ -6046,8 +6988,7 @@ const warezcdnScraper = makeSourcerer({
   rank: 81,
   flags: [flags.CORS_ALLOWED],
   scrapeMovie: async (ctx) => {
-    if (!ctx.media.imdbId)
-      throw new NotFoundError("This source requires IMDB id.");
+    if (!ctx.media.imdbId) throw new NotFoundError("This source requires IMDB id.");
     const serversPage = await ctx.proxiedFetcher(`/filme/${ctx.media.imdbId}`, {
       baseUrl: warezcdnBase
     });
@@ -6059,8 +7000,7 @@ const warezcdnScraper = makeSourcerer({
       const embedUrl = $(element).attr("data-load-embed");
       if (embedHost === "mixdrop") {
         const realEmbedUrl = await getExternalPlayerUrl(ctx, "mixdrop", embedUrl);
-        if (!realEmbedUrl)
-          throw new Error("Could not find embed url");
+        if (!realEmbedUrl) throw new Error("Could not find embed url");
         embeds.push({
           embedId: mixdropScraper.id,
           url: realEmbedUrl
@@ -6084,13 +7024,11 @@ const warezcdnScraper = makeSourcerer({
   },
   scrapeShow: async (ctx) => {
     var _a;
-    if (!ctx.media.imdbId)
-      throw new NotFoundError("This source requires IMDB id.");
+    if (!ctx.media.imdbId) throw new NotFoundError("This source requires IMDB id.");
     const url = `${warezcdnBase}/serie/${ctx.media.imdbId}/${ctx.media.season.number}/${ctx.media.episode.number}`;
     const serversPage = await ctx.proxiedFetcher(url);
     const episodeId = (_a = serversPage.match(/\$\('\[data-load-episode-content="(\d+)"\]'\)/)) == null ? void 0 : _a[1];
-    if (!episodeId)
-      throw new NotFoundError("Failed to find episode id");
+    if (!episodeId) throw new NotFoundError("Failed to find episode id");
     const streamsData = await ctx.proxiedFetcher(`/serieAjax.php`, {
       method: "POST",
       baseUrl: warezcdnBase,
@@ -6108,8 +7046,7 @@ const warezcdnScraper = makeSourcerer({
     const embeds = [];
     if (list.mixdropStatus === "3") {
       const realEmbedUrl = await getExternalPlayerUrl(ctx, "mixdrop", list.id);
-      if (!realEmbedUrl)
-        throw new Error("Could not find embed url");
+      if (!realEmbedUrl) throw new Error("Could not find embed url");
       embeds.push({
         embedId: mixdropScraper.id,
         url: realEmbedUrl
@@ -6134,6 +7071,7 @@ const warezcdnScraper = makeSourcerer({
 });
 function gatherAllSources() {
   return [
+    catflixScraper,
     flixhqScraper,
     remotestreamScraper,
     kissAsianScraper,
@@ -6142,16 +7080,24 @@ function gatherAllSources() {
     zoechipScraper,
     vidsrcScraper,
     lookmovieScraper,
+    nsbxScraper,
     smashyStreamScraper,
     ridooMoviesScraper,
     vidSrcToScraper,
     nepuScraper,
     goojaraScraper,
     hdRezkaScraper,
+    m4uScraper,
     primewireScraper,
     warezcdnScraper,
     insertunitScraper,
-    soaperTvScraper
+    nitesScraper,
+    soaperTvScraper,
+    autoembedScraper,
+    tugaflixScraper,
+    ee3Scraper,
+    whvxScraper,
+    fsharetvScraper
   ];
 }
 function gatherAllEmbeds() {
@@ -6171,6 +7117,9 @@ function gatherAllEmbeds() {
     ridooScraper,
     closeLoadScraper,
     fileMoonScraper,
+    fileMoonMp4Scraper,
+    deltaScraper,
+    alphaScraper,
     vidplayScraper,
     wootlyScraper,
     doodScraper,
@@ -6181,7 +7130,18 @@ function gatherAllEmbeds() {
     filelionsScraper,
     vTubeScraper,
     warezcdnembedHlsScraper,
-    warezcdnembedMp4Scraper
+    warezcdnembedMp4Scraper,
+    bflixScraper,
+    playm4uNMScraper,
+    hydraxScraper,
+    autoembedEnglishScraper,
+    autoembedHindiScraper,
+    autoembedBengaliScraper,
+    autoembedTamilScraper,
+    autoembedTeluguScraper,
+    turbovidScraper,
+    novaScraper,
+    astraScraper
   ];
 }
 function getBuiltinSources() {
@@ -6200,19 +7160,20 @@ function getProviders(features, list) {
   const anyDuplicateId = hasDuplicates(combined.map((v) => v.id));
   const anyDuplicateSourceRank = hasDuplicates(sources.map((v) => v.rank));
   const anyDuplicateEmbedRank = hasDuplicates(embeds.map((v) => v.rank));
-  if (anyDuplicateId)
-    throw new Error("Duplicate id found in sources/embeds");
-  if (anyDuplicateSourceRank)
-    throw new Error("Duplicate rank found in sources");
-  if (anyDuplicateEmbedRank)
-    throw new Error("Duplicate rank found in embeds");
+  if (anyDuplicateId) throw new Error("Duplicate id found in sources/embeds");
+  if (anyDuplicateSourceRank) throw new Error("Duplicate rank found in sources");
+  if (anyDuplicateEmbedRank) throw new Error("Duplicate rank found in embeds");
   return {
     sources: sources.filter((s) => flagsAllowedInFeatures(features, s.flags)),
     embeds
   };
 }
 function makeProviders(ops) {
-  const features = getTargetFeatures(ops.target, ops.consistentIpForRequests ?? false);
+  const features = getTargetFeatures(
+    ops.proxyStreams ? "any" : ops.target,
+    ops.consistentIpForRequests ?? false,
+    ops.proxyStreams
+  );
   const list = getProviders(features, {
     embeds: getBuiltinEmbeds(),
     sources: getBuiltinSources()
@@ -6222,7 +7183,8 @@ function makeProviders(ops) {
     sources: list.sources,
     features,
     fetcher: ops.fetcher,
-    proxiedFetcher: ops.proxiedFetcher
+    proxiedFetcher: ops.proxiedFetcher,
+    proxyStreams: ops.proxyStreams
   });
 }
 function buildProviders() {
@@ -6257,8 +7219,7 @@ function buildProviders() {
         return this;
       }
       const matchingSource = builtinSources.find((v) => v.id === input);
-      if (!matchingSource)
-        throw new Error("Source not found");
+      if (!matchingSource) throw new Error("Source not found");
       sources.push(matchingSource);
       return this;
     },
@@ -6268,8 +7229,7 @@ function buildProviders() {
         return this;
       }
       const matchingEmbed = builtinEmbeds.find((v) => v.id === input);
-      if (!matchingEmbed)
-        throw new Error("Embed not found");
+      if (!matchingEmbed) throw new Error("Embed not found");
       embeds.push(matchingEmbed);
       return this;
     },
@@ -6279,10 +7239,8 @@ function buildProviders() {
       return this;
     },
     build() {
-      if (!target)
-        throw new Error("Target not set");
-      if (!fetcher)
-        throw new Error("Fetcher not set");
+      if (!target) throw new Error("Target not set");
+      if (!fetcher) throw new Error("Fetcher not set");
       const features = getTargetFeatures(target, consistentIpForRequests);
       const list = getProviders(features, {
         embeds,
@@ -6333,11 +7291,11 @@ function getHeaders(list, res) {
   list.forEach((header) => {
     var _a;
     const realHeader = header.toLowerCase();
-    const value = res.headers.get(realHeader);
+    const realValue = res.headers.get(realHeader);
     const extraValue = (_a = res.extraHeaders) == null ? void 0 : _a.get(realHeader);
-    if (!value)
-      return;
-    output.set(realHeader, extraValue ?? value);
+    const value = extraValue ?? realValue;
+    if (!value) return;
+    output.set(realHeader, value);
   });
   return output;
 }
@@ -6352,14 +7310,13 @@ function makeStandardFetcher(f) {
         ...seralizedBody.headers,
         ...ops.headers
       },
-      body: seralizedBody.body
+      body: seralizedBody.body,
+      credentials: ops.credentials
     });
     let body;
     const isJson = (_a = res.headers.get("content-type")) == null ? void 0 : _a.includes("application/json");
-    if (isJson)
-      body = await res.json();
-    else
-      body = await res.text();
+    if (isJson) body = await res.json();
+    else body = await res.text();
     return {
       body,
       finalUrl: res.extraUrl ?? res.url,
@@ -6387,9 +7344,8 @@ function makeSimpleProxyFetcher(proxyUrl, f) {
       Object.entries(responseHeaderMap).forEach((entry) => {
         var _a;
         const value = res.headers.get(entry[0]);
-        if (!value)
-          return;
-        (_a = res.extraHeaders) == null ? void 0 : _a.set(entry[0].toLowerCase(), value);
+        if (!value) return;
+        (_a = res.extraHeaders) == null ? void 0 : _a.set(entry[1].toLowerCase(), value);
       });
       res.extraUrl = res.headers.get("X-Final-Destination") ?? res.url;
       return res;
@@ -6397,8 +7353,7 @@ function makeSimpleProxyFetcher(proxyUrl, f) {
     const fullUrl = makeFullUrl(url, ops);
     const headerEntries = Object.entries(ops.headers).map((entry) => {
       const key2 = entry[0].toLowerCase();
-      if (headerMap[key2])
-        return [headerMap[key2], entry[1]];
+      if (headerMap[key2]) return [headerMap[key2], entry[1]];
       return entry;
     });
     return fetcher(proxyUrl, {

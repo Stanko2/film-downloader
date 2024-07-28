@@ -6,7 +6,7 @@ fi
 
 
 echo "Cloning repository ..."
-git clone https://github.com/ztpn/providers.git
+git clone https://github.com/sussy-code/providers.git
 
 cd providers
 
