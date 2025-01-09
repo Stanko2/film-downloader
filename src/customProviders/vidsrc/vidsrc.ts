@@ -36,7 +36,7 @@ async function serversLoad(html: string): Promise<{ servers: Servers[]; title: s
   const title = $("title").text() ?? "";
   const base = $("iframe").attr("src") ?? "";
   BASEDOM = new URL(base.startsWith("//") ? "https:" + base : base).origin ?? BASEDOM;
-  $(".serversList .server").each((index, element) => {
+  $(".serversList .server").each((_index, element) => {
     const server = $(element);
     servers.push({
       name: server.text().trim(),
@@ -47,8 +47,6 @@ async function serversLoad(html: string): Promise<{ servers: Servers[]; title: s
     servers: servers,
     title: title,
   };
-}
-async function SRCRCPhandler() {
 }
 async function PRORCPhandler(prorcp: string): Promise<string | null> {
   const prorcpFetch = await fetch(`${BASEDOM}/prorcp/${prorcp}`);

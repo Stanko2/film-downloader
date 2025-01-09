@@ -10,7 +10,6 @@ import axios from 'axios'
 import { scrapeEpisode, getDownloadLinks, listSources } from './scraper'
 import { addEpisode, getAllShows, getEpisodeName, getShowDetails, getYear, reloadLibrary } from './library'
 import multer from 'multer'
-import { Playlist } from 'hls-parser/types'
 
 const upload = multer({ dest: 'uploads/' })
 const router = Router()
@@ -121,7 +120,7 @@ router.post('/add', async (req, res)=> {
       } else {
         res.redirect('/series')
       }
-    }, {}, 'file');
+    }, {}, 'file', {});
   } catch (e) {
     res.render('error', { error: e })
   }

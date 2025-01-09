@@ -78,7 +78,7 @@ export default class DownloadCommand {
     }, 500)
   }
 
-  constructor(private videoURL: string, private dest: string, private name: string, private cb: (success: boolean) => void, captionURLs: Record<string, string>, private type: DownloadType, private headers: Record<string,string>, private id: number = -1) {
+  constructor(private videoURL: string, private dest: string, private name: string, private cb: (success: boolean) => void, captionURLs: Record<string, string>, private type: DownloadType, private headers: Record<string, string> = {}, private id: number = -1) {
     if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true, mode: 0o777 })
     if (this.id == -1) {
       db.addDownloadCommand(this.toJSON('scheduled')).then(id => {
