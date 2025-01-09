@@ -55,8 +55,6 @@ async function scrapeSource(data: ScrapeMedia, source: string) {
         throw new Error('error while scraping source ' + source + ':' + err);
     })
 
-    console.log(embeds.stream)
-    console.log(embeds.embeds)
     if(!embeds) return null;
 
     for (const stream of embeds.stream ?? []) {

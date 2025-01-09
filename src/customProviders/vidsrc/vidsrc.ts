@@ -130,7 +130,7 @@ async function tmdbScrape(tmdbId: string, type: "movie" | "tv", season?: number,
         "sec-fetch-dest": "script",
         "sec-fetch-mode": "no-cors",
         "sec-fetch-site": "same-origin",
-        "Referer": url,
+        "Referer": "https://vidsrc.net/",
         "Referrer-Policy": "origin",
       },
       method: "GET"
