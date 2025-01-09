@@ -4,7 +4,7 @@
   "description": "Helper for scheduling film or other large file downloads",
   "main": "./lib/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp -r src/providerLib lib/providerLib",
     "lint": "tslint -c tslint.json src/**/*.ts",
     "dev": "tsx watch src/index.ts",
     "start": "npm run build && node ./lib/index.js"
