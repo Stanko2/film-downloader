@@ -10,6 +10,7 @@ import axios from 'axios'
 import { scrapeEpisode, getDownloadLinks, listSources } from './scraper'
 import { addEpisode, getAllShows, getEpisodeName, getShowDetails, getYear, reloadLibrary } from './library'
 import multer from 'multer'
+import { Playlist } from 'hls-parser/types'
 
 const upload = multer({ dest: 'uploads/' })
 const router = Router()
@@ -45,7 +46,7 @@ router.get('/:id/streams', async (req,res) => {
   const showName = shows[parseInt(req.params.id) - 1]
   const streamNames = fs.readdirSync(path.join(location, showName)).filter(x=> IsVideo(x)).sort()
   const streams: any[] = []
-  const details = await getShowDetails(showName) || null  
+  const details = await getShowDetails(showName) || null
   for (const stream of streamNames) {
     const p = path.join(location, showName, stream)
     const data = await getStreamMetadata(p, stream).catch((err)=> {
@@ -55,7 +56,7 @@ router.get('/:id/streams', async (req,res) => {
       }
     })
     const file = parseSeasonEpisode(stream)
-    
+
     if(!file || !details) {
       streams.push({
         streamData: data,
@@ -69,7 +70,7 @@ router.get('/:id/streams', async (req,res) => {
     })
 
   }
-  res.render('pages/tvShows/stats', { 
+  res.render('pages/tvShows/stats', {
     show: {
       name: showName,
       streams: streams,
@@ -78,7 +79,7 @@ router.get('/:id/streams', async (req,res) => {
     id: req.params.id
   })
 })
-  
+
 router.get('/:id/watch/:streamId/file', async (req,res) => {
   const shows = await getAllShows()
   try {
@@ -144,12 +145,12 @@ router.get('/add/searchResult', async (req, res) => {
     movie: false
   })
 })
-  
+
 router.get('/download/:id', async (req,res) => {
   const data = await getTvShowFromID(req.params.id)
-  
+
   const url = req.originalUrl.split('?')[0]
-  
+
   res.render('pages/qualityChooser', {
     pageType: 'series',
     title: data.name,
@@ -169,7 +170,9 @@ router.get('/download/:id', async (req,res) => {
 
 router.get('/download/:id/scrape', async (req, res) => {
   const data = await getTvShowFromID(req.params.id)
-  const metadata  = await scrapeEpisode(data, req.body.season ?? 1, req.body.episode ?? 1, req.query.source as string);
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  //@ts-ignore req.query is not typed
+  const metadata  = await scrapeEpisode(data, parseInt(req.query.season ?? '1'), parseInt(req.query.episode ?? '1'), req.query.source as string);
   const stream = metadata?.stream
   const url = req.originalUrl.split('?')[0]
   let qualities: Record<string, string> = {}
@@ -178,7 +181,9 @@ router.get('/download/:id/scrape', async (req, res) => {
       qualities[q] = stream.qualities[q].url
     })
   } else if (stream?.type == 'hls' && stream?.playlist) {
-    const manifest = await (await axios.get(stream?.playlist)).data
+    const manifest = await (await axios.get(stream?.playlist, {
+      headers: stream?.headers
+    })).data
     qualities = parseHlsQuality(manifest, stream?.playlist) as Record<string, string>
   }
 
@@ -251,10 +256,11 @@ router.post('/download/:id', (req, res) => {
       } else {
         console.log(link.src.stream.playlist);
         const manifest = await axios.get(link.src.stream.playlist, {
-          responseType: 'text'
+          responseType: 'text',
+          headers: link.src.stream.headers
         }).then(res => res.data)
         const parsed = parseHlsQuality(manifest, link.src.stream.playlist);
-        src = parsed[req.body.quality as Qualities]  
+        src = parsed[req.body.quality as Qualities]
         if(!src) {
           src = parsed[(Object.keys(parsed) as Qualities[]).sort(compareQualities)[0]]
         }
@@ -266,8 +272,8 @@ router.post('/download/:id', (req, res) => {
 
       const cmd = new DownloadCommand(src, await db.getSaveLocation('series') + '/' + dirName, fileName, ()=> {
         return
-      }, captions, link.src.stream.type)
-      
+      }, captions, link.src.stream.type, link.src.stream.headers ?? {})
+
       cmd.scrapeArgs = {
         type: 'show',
         data,

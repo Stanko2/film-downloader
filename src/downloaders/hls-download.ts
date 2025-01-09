@@ -13,8 +13,8 @@ export default class HlsDownloader extends Downloader {
   size = 0
   queue: Promise<void>[] = []
   segmentsDir = ''
-  constructor(protected url: string, protected filename: string) {
-    super(url, filename)
+  constructor(protected url: string, protected filename: string, protected headers: Record<string, string>) {
+    super(url, filename, headers)
   }
 
   async init(): Promise<boolean> {
@@ -36,7 +36,7 @@ export default class HlsDownloader extends Downloader {
   override async startDownload(progressCallback: (progress: DownloadProgress) => void): Promise<void> {
     const file = this.filename.split('/').pop() || ''
     const dir = this.filename.split('/').slice(0, -1).join('/')
-    const segments = await this.getSegments(this.url).catch(err => {
+    const segments = await this.getSegments(this.url, this.headers).catch(err => {
       throw err
     });
     const baseUrl = this.url.split('/').slice(0, -1).join('/')
@@ -88,9 +88,10 @@ export default class HlsDownloader extends Downloader {
     Logger.log(`Finished Download ${this.name}`)
   }
 
-  async getSegments(playlistURL: string): Promise<string[]> {
+  async getSegments(playlistURL: string, headers: Record<string, string> = {}): Promise<string[]> {
     const manifest = (await axios.get(playlistURL, {
-      responseType: 'text'
+      responseType: 'text',
+      headers
     })).data
     const out: string[] = []
     const lines = manifest.split('\n')

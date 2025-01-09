@@ -1,20 +1,26 @@
-import { Fetcher, ScrapeMedia, makeProviders, makeStandardFetcher, targets, RunOutput } from "./providerLib";
+import { Fetcher, ScrapeMedia, buildProviders, makeStandardFetcher, targets, RunOutput } from "./providerLib";
 import MovieDB from "node-themoviedb";
 import { getImdbId, getMovieFromID, getTvShowFromID } from "./tmdb";
 import { Logger } from "./logger";
 import { Router } from "express";
+import { addCustomProviders } from "./customProviders";
 
 function getFetcher(): Fetcher {
     return makeStandardFetcher(fetch);
 }
-  
+
+
+function getProviders() {
+  return addCustomProviders(buildProviders()
+    .addBuiltinProviders()
+    .setTarget(targets.ANY)
+    .setFetcher(getFetcher()))
+  .build();
+}
 
 
 export function listSources() {
-    const providers = makeProviders({
-      fetcher: getFetcher(),
-      target: "any"
-    });
+    const providers = getProviders();
     return providers.listSources();
 }
 
@@ -22,6 +28,7 @@ export async function* getDownloadLinks(showData: MovieDB.Responses.TV.GetDetail
     for (const season of showData.seasons) {
         for (let i = 0; i < season.episode_count; i++) {
             if(!downloadEpisode(season.season_number, i+1)) continue
+            console.log(`scraping episode #${i} of season #${season.season_number}`)
             const s = await scrapeEpisode(showData, season.season_number, i+1, source).catch(err=> {
                 Logger.error(new Error(`${showData.name}: error while scraping episode #${i + 1} of season ${season.season_number}: ${err}`));
                 return null;
@@ -39,11 +46,8 @@ export async function* getDownloadLinks(showData: MovieDB.Responses.TV.GetDetail
 }
 
 async function scrapeSource(data: ScrapeMedia, source: string) {
-    const providers = makeProviders({
-        fetcher: makeStandardFetcher(fetch),
-        target: targets.ANY
-    })
-    
+    const providers = getProviders()
+
     const embeds =  await providers.runSourceScraper({
         media: data,
         id: source,
@@ -51,7 +55,17 @@ async function scrapeSource(data: ScrapeMedia, source: string) {
         throw new Error('error while scraping source ' + source + ':' + err);
     })
 
+    console.log(embeds.stream)
+    console.log(embeds.embeds)
     if(!embeds) return null;
+
+    for (const stream of embeds.stream ?? []) {
+        return <RunOutput>{
+            sourceId: source,
+            stream: stream,
+            embedId: undefined
+        };
+    }
 
     for (const embed of embeds.embeds) {
         const out = await providers.runEmbedScraper({
@@ -70,13 +84,11 @@ async function scrapeSource(data: ScrapeMedia, source: string) {
     }
     return null;
 }
-  
+
 export async function scrapeEpisode(data: MovieDB.Responses.TV.GetDetails, season: number, episode: number, source: string | undefined): Promise<RunOutput | null> {
-    const providers = makeProviders({
-        fetcher: makeStandardFetcher(fetch),
-        target: targets.ANY
-    })
+    const providers = getProviders()
     const imdb_id = await getImdbId(data.id.toString(), 'tv') ?? undefined;
+    console.log("season: " + season + " episode: " + episode)
     const scrapedData: ScrapeMedia = {
         type: "show",
         episode: {
@@ -90,7 +102,7 @@ export async function scrapeEpisode(data: MovieDB.Responses.TV.GetDetails, seaso
         releaseYear: new Date(data.first_air_date).getFullYear(),
         title: data.name,
         tmdbId: data.id.toString(),
-        imdbId: imdb_id, 
+        imdbId: imdb_id,
     }
 
     if (source) {
@@ -109,12 +121,9 @@ export async function scrapeEpisode(data: MovieDB.Responses.TV.GetDetails, seaso
 }
 
 export async function ScrapeMovie(movieData: MovieDB.Responses.Movie.GetDetails, source: string | undefined) {
-    const providers = makeProviders({
-      fetcher: getFetcher(),
-      target: targets.ANY
-    })
-    
-    const scrapeData: ScrapeMedia = {   
+    const providers = getProviders()
+
+    const scrapeData: ScrapeMedia = {
         type: 'movie',
         title: movieData.title,
         tmdbId: movieData.id.toString() || '',
@@ -152,7 +161,7 @@ router.get('/movie', async (req, res) => {
         return;
     }
     res.statusCode = 404;
-    res.send({error: "Not found"});  
+    res.send({error: "Not found"});
 })
 
 router.get('/show', async (req,res) => {
@@ -172,5 +181,5 @@ router.get('/show', async (req,res) => {
         return;
     }
     res.statusCode = 404;
-    res.send({error: "Not found"});  
+    res.send({error: "Not found"});
 });

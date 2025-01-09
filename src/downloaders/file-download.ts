@@ -8,8 +8,8 @@ export default class FileDownloader extends Downloader {
     downloaded = 0
     size = 0
     downloadStream: fs.WriteStream | undefined
-    constructor(protected url: string, protected filename: string) {
-        super(url, filename)
+    constructor(protected url: string, protected filename: string, protected headers: Record<string, string>) {
+        super(url, filename, headers)
     }
 
     async init(): Promise<boolean> {

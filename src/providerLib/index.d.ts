@@ -69,6 +69,7 @@ export declare interface EmbedRunnerOptions {
     events?: IndividualScraperEvents;
     url: string;
     id: string;
+    disableOpensubtitles?: boolean;
 }
 
 export declare type EmbedScrapeContext = EmbedInput & ScrapeContext;
@@ -145,6 +146,8 @@ export declare type FullScraperEvents = {
 
 export declare function getBuiltinEmbeds(): Embed[];
 
+export declare function getBuiltinExternalSources(): Sourcerer[];
+
 export declare function getBuiltinSources(): Sourcerer[];
 
 export declare type HlsBasedStream = StreamCommon & {
@@ -218,6 +221,7 @@ export declare interface ProviderMakerOptions {
     proxiedFetcher?: Fetcher;
     target: Targets;
     consistentIpForRequests?: boolean;
+    externalSources?: 'all' | string[];
     proxyStreams?: boolean;
 }
 
@@ -228,6 +232,7 @@ export declare interface RunnerOptions {
     embedOrder?: string[];
     events?: FullScraperEvents;
     media: ScrapeMedia;
+    disableOpensubtitles?: boolean;
 }
 
 export declare type RunOutput = {
@@ -263,6 +268,7 @@ export declare type ShowScrapeContext = ScrapeContext & {
 declare type Sourcerer = SourcererOptions & {
     type: 'source';
     disabled: boolean;
+    externalSource: boolean;
     mediaTypes: MediaScraperTypes[];
 };
 
@@ -276,6 +282,7 @@ export declare type SourcererOptions = {
     name: string;
     rank: number;
     disabled?: boolean;
+    externalSource?: boolean;
     flags: Flags[];
     scrapeMovie?: (input: MovieScrapeContext) => Promise<SourcererOutput>;
     scrapeShow?: (input: ShowScrapeContext) => Promise<SourcererOutput>;
@@ -290,6 +297,7 @@ export declare interface SourceRunnerOptions {
     events?: IndividualScraperEvents;
     media: ScrapeMedia;
     id: string;
+    disableOpensubtitles?: boolean;
 }
 
 export declare type Stream = FileBasedStream | HlsBasedStream;

@@ -14,8 +14,8 @@ export abstract class Downloader {
     static busy = false
 
     static filesProcessing: Set<string> = new Set()
-    constructor(protected url: string, protected name: string) {
-     
+    constructor(protected url: string, protected name: string, protected headers: Record<string, string>) {
+
     }
 
     abstract startDownload(progressCallback: (progress: DownloadProgress) => void): Promise<void>

@@ -7,6 +7,7 @@ import { load } from "cheerio";
 import FormData from "form-data";
 import cookie from "cookie";
 import setCookieParser from "set-cookie-parser";
+import { parse, stringify } from "hls-parser";
 class NotFoundError extends Error {
   constructor(reason) {
     super(`Couldn't find a stream: ${reason ?? "not found"}`);
@@ -194,17 +195,17 @@ async function addOpenSubtitlesCaptions(captions, ops, media) {
   }
 }
 function requiresProxy(stream) {
-  if (!stream.flags.includes(flags.CORS_ALLOWED) && !!(stream.headers && Object.keys(stream.headers).length > 0))
+  if (!stream.flags.includes(flags.CORS_ALLOWED) || !!(stream.headers && Object.keys(stream.headers).length > 0))
     return true;
   return false;
 }
 function setupProxy(stream) {
-  const headers = stream.headers && Object.keys(stream.headers).length > 0 ? stream.headers : void 0;
+  const headers2 = stream.headers && Object.keys(stream.headers).length > 0 ? stream.headers : void 0;
   const options = {
     ...stream.type === "hls" && { depth: stream.proxyDepth ?? 0 }
   };
   const payload = {
-    headers,
+    headers: headers2,
     options
   };
   if (stream.type === "hls") {
@@ -231,6 +232,7 @@ function makeSourcerer(state) {
     ...state,
     type: "source",
     disabled: state.disabled ?? false,
+    externalSource: state.externalSource ?? false,
     mediaTypes
   };
 }
@@ -285,26 +287,9 @@ function embed$2(provider) {
   });
 }
 const [deltaScraper, alphaScraper] = providers$2.map(embed$2);
-const warezcdnBase = "https://embed.warezcdn.com";
-const warezcdnApiBase = "https://warezcdn.com/embed";
-const warezcdnPlayerBase = "https://warezcdn.com/player";
+const warezcdnBase = "https://embed.warezcdn.link";
+const warezcdnPlayerBase = "https://warezcdn.link/player";
 const warezcdnWorkerProxy = "https://workerproxy.warezcdn.workers.dev";
-async function getExternalPlayerUrl(ctx, embedId, embedUrl) {
-  const params = {
-    id: embedUrl,
-    sv: embedId
-  };
-  const realUrl = await ctx.proxiedFetcher(`/getPlay.php`, {
-    baseUrl: warezcdnApiBase,
-    headers: {
-      Referer: `${warezcdnApiBase}/getEmbed.php?${new URLSearchParams(params)}`
-    },
-    query: params
-  });
-  const realEmbedUrl = realUrl.match(/window\.location\.href="([^"]*)";/);
-  if (!realEmbedUrl) throw new Error("Could not find embed url");
-  return realEmbedUrl[1];
-}
 function decrypt$1(input) {
   let output = atob(input);
   output = output.trim();
@@ -362,8 +347,9 @@ const warezcdnembedMp4Scraper = makeEmbed({
   id: "warezcdnembedmp4",
   // WarezCDN is both a source and an embed host
   name: "WarezCDN MP4",
+  // method no longer works
   rank: 82,
-  disabled: false,
+  disabled: true,
   async scrape(ctx) {
     const decryptedId = await getDecryptedId(ctx);
     if (!decryptedId) throw new NotFoundError("can't get file id");
@@ -390,7 +376,7 @@ const warezcdnembedMp4Scraper = makeEmbed({
   }
 });
 const baseUrl$b = "https://api.whvx.net";
-async function comboScraper$7(ctx) {
+async function comboScraper$8(ctx) {
   var _a;
   const query = {
     title: ctx.media.title,
@@ -419,59 +405,77 @@ const whvxScraper = makeSourcerer({
   id: "whvx",
   name: "VidBinge",
   rank: 128,
+  disabled: true,
+  externalSource: true,
   flags: [flags.CORS_ALLOWED],
-  scrapeMovie: comboScraper$7,
-  scrapeShow: comboScraper$7
+  scrapeMovie: comboScraper$8,
+  scrapeShow: comboScraper$8
 });
 const providers$1 = [
   {
     id: "nova",
-    name: "Nova",
-    rank: 701
+    rank: 720
   },
   {
     id: "astra",
-    name: "Astra",
+    rank: 710
+  },
+  {
+    id: "orion",
     rank: 700
   }
 ];
+const headers = {
+  Origin: "https://www.vidbinge.com",
+  Referer: "https://www.vidbinge.com"
+};
 function embed$1(provider) {
   return makeEmbed({
     id: provider.id,
-    name: provider.name,
+    name: provider.id.charAt(0).toUpperCase() + provider.id.slice(1),
     rank: provider.rank,
-    disabled: false,
+    disabled: provider.disabled,
     async scrape(ctx) {
-      const query = ctx.url;
-      const search2 = await ctx.fetcher.full("/search", {
-        query: {
-          query,
-          provider: provider.id
-        },
-        baseUrl: baseUrl$b
-      });
-      if (search2.statusCode === 429) throw new Error("Rate limited");
-      if (search2.statusCode !== 200) throw new NotFoundError("Failed to search");
-      ctx.progress(50);
-      const result = await ctx.fetcher("/source", {
-        query: {
-          resourceId: search2.body.url,
-          provider: provider.id
-        },
-        baseUrl: baseUrl$b
-      });
-      ctx.progress(100);
-      return result;
+      let progress = 50;
+      const interval = setInterval(() => {
+        if (progress < 100) {
+          progress += 1;
+          ctx.progress(progress);
+        }
+      }, 100);
+      try {
+        const search2 = await ctx.fetcher.full(
+          `${baseUrl$b}/search?query=${encodeURIComponent(ctx.url)}&provider=${provider.id}`,
+          { headers }
+        );
+        if (search2.statusCode === 429) {
+          throw new Error("Rate limited");
+        } else if (search2.statusCode !== 200) {
+          throw new NotFoundError("Failed to search");
+        }
+        const result = await ctx.fetcher(
+          `${baseUrl$b}/source?resourceId=${encodeURIComponent(search2.body.url)}&provider=${provider.id}`,
+          { headers }
+        );
+        clearInterval(interval);
+        ctx.progress(100);
+        return result;
+      } catch (error) {
+        clearInterval(interval);
+        ctx.progress(100);
+        throw new NotFoundError("Failed to search");
+      }
     }
   });
 }
-const [novaScraper, astraScraper] = providers$1.map(embed$1);
+const [novaScraper, astraScraper, orionScraper] = providers$1.map(embed$1);
 const SKIP_VALIDATION_CHECK_IDS = [
   warezcdnembedMp4Scraper.id,
   deltaScraper.id,
   alphaScraper.id,
   novaScraper.id,
-  astraScraper.id
+  astraScraper.id,
+  orionScraper.id
 ];
 function isValidStream$1(stream) {
   if (!stream) return false;
@@ -570,24 +574,26 @@ async function scrapeInvidualSource(list, ops) {
     if (!e || e.disabled) return false;
     return true;
   });
-  for (const embed2 of output.embeds)
-    embed2.url = `${embed2.url}${btoa("MEDIA=")}${btoa(
-      `${ops.media.imdbId}${ops.media.type === "show" ? `.${ops.media.season.number}.${ops.media.episode.number}` : ""}`
-    )}`;
+  if (!ops.disableOpensubtitles)
+    for (const embed2 of output.embeds)
+      embed2.url = `${embed2.url}${btoa("MEDIA=")}${btoa(
+        `${ops.media.imdbId}${ops.media.type === "show" ? `.${ops.media.season.number}.${ops.media.episode.number}` : ""}`
+      )}`;
   if ((!output.stream || output.stream.length === 0) && output.embeds.length === 0)
     throw new NotFoundError("No streams found");
   if (output.stream && output.stream.length > 0 && output.embeds.length === 0) {
     const playableStreams = await validatePlayableStreams(output.stream, ops, sourceScraper.id);
     if (playableStreams.length === 0) throw new NotFoundError("No playable streams found");
-    for (const playableStream of playableStreams) {
-      playableStream.captions = await addOpenSubtitlesCaptions(
-        playableStream.captions,
-        ops,
-        btoa(
-          `${ops.media.imdbId}${ops.media.type === "show" ? `.${ops.media.season.number}.${ops.media.episode.number}` : ""}`
-        )
-      );
-    }
+    if (!ops.disableOpensubtitles)
+      for (const playableStream of playableStreams) {
+        playableStream.captions = await addOpenSubtitlesCaptions(
+          playableStream.captions,
+          ops,
+          btoa(
+            `${ops.media.imdbId}${ops.media.type === "show" ? `.${ops.media.season.number}.${ops.media.episode.number}` : ""}`
+          )
+        );
+      }
     output.stream = playableStreams;
   }
   return output;
@@ -618,7 +624,7 @@ async function scrapeIndividualEmbed(list, ops) {
   );
   const playableStreams = await validatePlayableStreams(output.stream, ops, embedScraper.id);
   if (playableStreams.length === 0) throw new NotFoundError("No playable streams found");
-  if (media)
+  if (media && !ops.disableOpensubtitles)
     for (const playableStream of playableStreams)
       playableStream.captions = await addOpenSubtitlesCaptions(playableStream.captions, ops, media);
   output.stream = playableStreams;
@@ -700,13 +706,14 @@ async function runAllProviders(list, ops) {
     if ((_h = output.stream) == null ? void 0 : _h[0]) {
       const playableStream = await validatePlayableStream(output.stream[0], ops, source.id);
       if (!playableStream) throw new NotFoundError("No streams found");
-      playableStream.captions = await addOpenSubtitlesCaptions(
-        playableStream.captions,
-        ops,
-        btoa(
-          `${ops.media.imdbId}${ops.media.type === "show" ? `.${ops.media.season.number}.${ops.media.episode.number}` : ""}`
-        )
-      );
+      if (!ops.disableOpensubtitles)
+        playableStream.captions = await addOpenSubtitlesCaptions(
+          playableStream.captions,
+          ops,
+          btoa(
+            `${ops.media.imdbId}${ops.media.type === "show" ? `.${ops.media.season.number}.${ops.media.episode.number}` : ""}`
+          )
+        );
       return {
         sourceId: source.id,
         stream: playableStream
@@ -746,13 +753,14 @@ async function runAllProviders(list, ops) {
         }
         const playableStream = await validatePlayableStream(embedOutput.stream[0], ops, embed2.embedId);
         if (!playableStream) throw new NotFoundError("No streams found");
-        playableStream.captions = await addOpenSubtitlesCaptions(
-          playableStream.captions,
-          ops,
-          btoa(
-            `${ops.media.imdbId}${ops.media.type === "show" ? `.${ops.media.season.number}.${ops.media.episode.number}` : ""}`
-          )
-        );
+        if (!ops.disableOpensubtitles)
+          playableStream.captions = await addOpenSubtitlesCaptions(
+            playableStream.captions,
+            ops,
+            btoa(
+              `${ops.media.imdbId}${ops.media.type === "show" ? `.${ops.media.season.number}.${ops.media.episode.number}` : ""}`
+            )
+          );
         embedOutput.stream = [playableStream];
       } catch (error) {
         const updateParams = {
@@ -1181,7 +1189,7 @@ const febboxMp4Scraper = makeEmbed({
     };
   }
 });
-const linkRegex$5 = /file: ?"(http.*?)"/;
+const linkRegex$6 = /file: ?"(http.*?)"/;
 const tracksRegex$2 = /\{file:\s"([^"]+)",\skind:\s"thumbnails"\}/g;
 const filelionsScraper = makeEmbed({
   id: "filelions",
@@ -1195,7 +1203,7 @@ const filelionsScraper = makeEmbed({
     });
     const mainPage = mainPageRes.body;
     const mainPageUrl = new URL(mainPageRes.finalUrl);
-    const streamUrl = mainPage.match(linkRegex$5) ?? [];
+    const streamUrl = mainPage.match(linkRegex$6) ?? [];
     const thumbnailTrack = tracksRegex$2.exec(mainPage);
     const playlist = streamUrl[1];
     if (!playlist) throw new Error("Stream url not found");
@@ -1219,8 +1227,8 @@ const filelionsScraper = makeEmbed({
   }
 });
 const mixdropBase = "https://mixdrop.ag";
-const packedRegex$2 = /(eval\(function\(p,a,c,k,e,d\){.*{}\)\))/;
-const linkRegex$4 = /MDCore\.wurl="(.*?)";/;
+const packedRegex$3 = /(eval\(function\(p,a,c,k,e,d\){.*{}\)\))/;
+const linkRegex$5 = /MDCore\.wurl="(.*?)";/;
 const mixdropScraper = makeEmbed({
   id: "mixdrop",
   name: "MixDrop",
@@ -1232,12 +1240,12 @@ const mixdropScraper = makeEmbed({
     const streamRes = await ctx.proxiedFetcher(`/e/${embedId}`, {
       baseUrl: mixdropBase
     });
-    const packed = streamRes.match(packedRegex$2);
+    const packed = streamRes.match(packedRegex$3);
     if (!packed) {
       throw new Error("failed to find packed mixdrop JavaScript");
     }
     const unpacked = unpacker.unpack(packed[1]);
-    const link = unpacked.match(linkRegex$4);
+    const link = unpacked.match(linkRegex$5);
     if (!link) {
       throw new Error("failed to find packed mixdrop source link");
     }
@@ -1294,7 +1302,7 @@ const mp4uploadScraper = makeEmbed({
   }
 });
 const hunterRegex = /eval\(function\(h,u,n,t,e,r\).*?\("(.*?)",\d*?,"(.*?)",(\d*?),(\d*?),\d*?\)\)/;
-const linkRegex$3 = /file:"(.*?)"/;
+const linkRegex$4 = /file:"(.*?)"/;
 function decodeHunter(encoded, mask, charCodeOffset, delimiterOffset) {
   const delimiter = mask[delimiterOffset];
   const chunks = encoded.split(delimiter).filter((chunk) => chunk);
@@ -1333,7 +1341,7 @@ const streambucketScraper = makeEmbed({
       throw new Error("StreamBucket hunter JavaScript delimiterOffset is not a valid number");
     }
     const decoded = decodeHunter(encoded, mask, charCodeOffset, delimiterOffset);
-    regexResult = decoded.match(linkRegex$3);
+    regexResult = decoded.match(linkRegex$4);
     if (!regexResult) {
       throw new Error("Failed to find StreamBucket HLS link");
     }
@@ -2238,6 +2246,32 @@ const streamsbScraper = makeEmbed({
     };
   }
 });
+const packedRegex$2 = /(eval\(function\(p,a,c,k,e,d\).*\)\)\))/;
+const linkRegex$3 = /file:"(https:\/\/[^"]+)"/;
+const streamwishScraper = makeEmbed({
+  id: "streamwish",
+  name: "Streamwish",
+  rank: 216,
+  async scrape(ctx) {
+    const streamRes = await ctx.proxiedFetcher(ctx.url);
+    const packed = streamRes.match(packedRegex$2);
+    if (!packed) throw new Error("Packed not found");
+    const unpacked = unpacker.unpack(packed[1]);
+    const link = unpacked.match(linkRegex$3);
+    if (!link) throw new Error("Stream not found");
+    return {
+      stream: [
+        {
+          type: "hls",
+          id: "primary",
+          playlist: link[1],
+          flags: [flags.CORS_ALLOWED],
+          captions: []
+        }
+      ]
+    };
+  }
+});
 function hexToChar(hex) {
   return String.fromCharCode(parseInt(hex, 16));
 }
@@ -2289,7 +2323,8 @@ const turbovidScraper = makeEmbed({
           id: "primary",
           playlist,
           headers: {
-            referer: baseUrl3
+            referer: `${baseUrl3}/`,
+            origin: baseUrl3
           },
           flags: [],
           captions: []
@@ -2528,7 +2563,7 @@ const vTubeScraper = makeEmbed({
   }
 });
 const baseUrl$9 = "https://autoembed.cc/";
-async function comboScraper$6(ctx) {
+async function comboScraper$7(ctx) {
   const playerPage = await ctx.proxiedFetcher(`/embed/player.php`, {
     baseUrl: baseUrl$9,
     query: {
@@ -2557,6 +2592,27 @@ const autoembedScraper = makeSourcerer({
   name: "Autoembed",
   rank: 10,
   disabled: true,
+  flags: [flags.CORS_ALLOWED],
+  scrapeMovie: comboScraper$7,
+  scrapeShow: comboScraper$7
+});
+async function comboScraper$6(ctx) {
+  const embedPage = await ctx.proxiedFetcher(
+    `https://bombthe.irish/embed/${ctx.media.type === "movie" ? `movie/${ctx.media.tmdbId}` : `tv/${ctx.media.tmdbId}/${ctx.media.season.number}/${ctx.media.episode.number}`}`
+  );
+  const $ = load(embedPage);
+  const embeds = [];
+  $("#dropdownMenu a").each((_, element) => {
+    const url = new URL($(element).data("url")).searchParams.get("url");
+    if (!url) return;
+    embeds.push({ embedId: $(element).text().toLowerCase(), url: atob(url) });
+  });
+  return { embeds };
+}
+const bombtheirishScraper = makeSourcerer({
+  id: "bombtheirish",
+  name: "bombthe.irish",
+  rank: 50,
   flags: [flags.CORS_ALLOWED],
   scrapeMovie: comboScraper$6,
   scrapeShow: comboScraper$6
@@ -2960,13 +3016,14 @@ async function comboScraper$3(ctx) {
     }
   );
   if (!apiRes.data.file.sources.length) throw new Error("No sources found");
+  const mediaBase = new URL((await ctx.proxiedFetcher.full(apiRes.data.file.sources[0].src, { baseUrl: baseUrl$6 })).finalUrl).origin;
   const qualities = apiRes.data.file.sources.reduce(
     (acc, source) => {
       const quality = typeof source.quality === "number" ? source.quality.toString() : source.quality;
       const validQuality = getValidQualityFromString(quality);
       acc[validQuality] = {
         type: "mp4",
-        url: `${baseUrl$6}${source.src}`
+        url: `${mediaBase}${source.src.replace("/api", "")}`
       };
       return acc;
     },
@@ -3247,7 +3304,6 @@ const insertUnitBase = "https://api.insertunit.ws/";
 const insertunitScraper = makeSourcerer({
   id: "insertunit",
   name: "Insertunit",
-  disabled: false,
   rank: 60,
   flags: [flags.CORS_ALLOWED],
   async scrapeShow(ctx) {
@@ -3331,7 +3387,7 @@ const embedProviders = [
     id: "sb"
   }
 ];
-async function getEmbeds$1(ctx, targetEpisode) {
+async function getEmbeds$2(ctx, targetEpisode) {
   let embeds = await Promise.all(
     embedProviders.map(async (provider) => {
       if (!targetEpisode.url) throw new NotFoundError("Episode not found");
@@ -3415,7 +3471,7 @@ const kissAsianScraper = makeSourcerer({
     const targetEpisode = episodes.find((e) => e.number === `${episodeNumber}`);
     if (!(targetEpisode == null ? void 0 : targetEpisode.url)) throw new NotFoundError("Episode not found");
     ctx.progress(70);
-    const embeds = await getEmbeds$1(ctx, targetEpisode);
+    const embeds = await getEmbeds$2(ctx, targetEpisode);
     return {
       embeds
     };
@@ -3436,7 +3492,7 @@ const kissAsianScraper = makeSourcerer({
     const targetEpisode = episodes[0];
     if (!(targetEpisode == null ? void 0 : targetEpisode.url)) throw new NotFoundError("Episode not found");
     ctx.progress(70);
-    const embeds = await getEmbeds$1(ctx, targetEpisode);
+    const embeds = await getEmbeds$2(ctx, targetEpisode);
     return {
       embeds
     };
@@ -3523,7 +3579,7 @@ async function scrape(ctx, media, result) {
   const video = await getVideo(ctx, id, media);
   return video;
 }
-async function universalScraper$8(ctx) {
+async function universalScraper$9(ctx) {
   const lookmovieData = await searchAndFindMedia$1(ctx, ctx.media);
   if (!lookmovieData) throw new NotFoundError("Media not found");
   ctx.progress(30);
@@ -3549,8 +3605,8 @@ const lookmovieScraper = makeSourcerer({
   disabled: true,
   rank: 50,
   flags: [flags.IP_LOCKED],
-  scrapeShow: universalScraper$8,
-  scrapeMovie: universalScraper$8
+  scrapeShow: universalScraper$9,
+  scrapeMovie: universalScraper$9
 });
 async function comboScraper$2(ctx) {
   var _a;
@@ -3583,9 +3639,47 @@ const nsbxScraper = makeSourcerer({
   name: "NSBX",
   rank: 129,
   flags: [flags.CORS_ALLOWED],
-  disabled: false,
+  disabled: true,
+  externalSource: true,
   scrapeMovie: comboScraper$2,
   scrapeShow: comboScraper$2
+});
+const universalScraper$8 = async (ctx) => {
+  var _a;
+  try {
+    const res = await ctx.fetcher.full(`https://red-star.ningai.workers.dev/scrape/showbox`, {
+      query: {
+        type: ctx.media.type,
+        title: ctx.media.title,
+        releaseYear: ctx.media.releaseYear.toString(),
+        tmdbId: ctx.media.tmdbId,
+        imdbId: ctx.media.imdbId ?? "",
+        ...ctx.media.type === "show" && {
+          episodeNumber: ctx.media.episode.number.toString(),
+          episodeTmdbId: ctx.media.episode.tmdbId,
+          seasonNumber: ctx.media.season.number.toString(),
+          seasonTmdbId: ctx.media.season.tmdbId
+        }
+      }
+    });
+    if (res.statusCode === 200 && ((_a = res.body.stream) == null ? void 0 : _a.length))
+      return { stream: res.body.stream, embeds: [] };
+    if (res.statusCode === 404) throw new NotFoundError("No watchable item found");
+    throw new Error(res.body.message ?? "An error has occurred!");
+  } catch (e) {
+    if (e instanceof NotFoundError) throw new NotFoundError(e.message);
+    throw new Error(e.message ?? "An error has occurred!");
+  }
+};
+const redStarScraper = makeSourcerer({
+  id: "redstar",
+  name: "redStar",
+  disabled: true,
+  externalSource: true,
+  rank: 131,
+  flags: [flags.CORS_ALLOWED],
+  scrapeMovie: universalScraper$8,
+  scrapeShow: universalScraper$8
 });
 const remotestreamBase = atob("aHR0cHM6Ly9mc2IuOG1ldDNkdGpmcmNxY2hjb25xcGtsd3hzeGIyb2N1bWMuc3RyZWFt");
 const origin = "https://remotestre.am";
@@ -4184,6 +4278,7 @@ const mp4Regex = /https?:\/\/.*\.mp4/;
 const bflixScraper = makeEmbed({
   id: "bflix",
   name: "bFlix",
+  disabled: true,
   rank: 113,
   scrape: async (ctx) => {
     const mainPage = await ctx.proxiedFetcher(ctx.url);
@@ -4348,6 +4443,7 @@ const hydraxScraper = makeEmbed({
   id: "hydrax",
   name: "Hydrax",
   rank: 250,
+  disabled: true,
   async scrape(ctx) {
     const embed2 = await ctx.proxiedFetcher(ctx.url);
     const match = embed2.match(/PLAYER\(atob\("(.*?)"/);
@@ -4792,6 +4888,8 @@ const warezcdnembedHlsScraper = makeEmbed({
   id: "warezcdnembedhls",
   // WarezCDN is both a source and an embed host
   name: "WarezCDN HLS",
+  // method no longer works
+  disabled: true,
   rank: 83,
   async scrape(ctx) {
     const decryptedId = await getDecryptedId(ctx);
@@ -4805,6 +4903,46 @@ const warezcdnembedHlsScraper = makeEmbed({
           flags: [flags.IP_LOCKED],
           captions: [],
           playlist: streamUrl
+        }
+      ]
+    };
+  }
+});
+const warezPlayerScraper = makeEmbed({
+  id: "warezplayer",
+  name: "warezPLAYER",
+  rank: 85,
+  async scrape(ctx) {
+    const playerPageUrl = new URL(ctx.url);
+    const hash = playerPageUrl.pathname.split("/")[2];
+    const playerApiRes = await ctx.proxiedFetcher("/player/index.php", {
+      baseUrl: playerPageUrl.origin,
+      query: {
+        data: hash,
+        do: "getVideo"
+      },
+      method: "POST",
+      body: new URLSearchParams({
+        hash
+      }),
+      headers: {
+        "X-Requested-With": "XMLHttpRequest"
+      }
+    });
+    const sources = JSON.parse(playerApiRes);
+    if (!sources.videoSource) throw new Error("Playlist not found");
+    return {
+      stream: [
+        {
+          id: "primary",
+          type: "hls",
+          flags: [],
+          captions: [],
+          playlist: sources.videoSource,
+          headers: {
+            // without this it returns "security error"
+            Accept: "*/*"
+          }
         }
       ]
     };
@@ -4876,7 +5014,7 @@ const wootlyScraper = makeEmbed({
 });
 const baseUrl$3 = "https://www.goojara.to";
 const baseUrl2 = "https://ww1.goojara.to";
-async function getEmbeds(ctx, id) {
+async function getEmbeds$1(ctx, id) {
   const data2 = await ctx.fetcher.full(`/${id}`, {
     baseUrl: baseUrl2,
     headers: {
@@ -4980,7 +5118,7 @@ async function scrapeIds(ctx, media, result) {
     id = episodeId;
   }
   if (id === null) throw new NotFoundError("Not found");
-  const embeds = await getEmbeds(ctx, id);
+  const embeds = await getEmbeds$1(ctx, id);
   return embeds;
 }
 async function universalScraper$7(ctx) {
@@ -5058,7 +5196,7 @@ function extractTitleAndYear(input) {
   }
   return null;
 }
-const rezkaBase = "https://hdrzk.org";
+const rezkaBase = "https://hdrezka.ag/";
 const baseHeaders = {
   "X-Hdrezka-Android-App": "1",
   "X-Hdrezka-Android-App-Version": "2.2.0"
@@ -5148,9 +5286,9 @@ const hdRezkaScraper = makeSourcerer({
   scrapeShow: universalScraper$6,
   scrapeMovie: universalScraper$6
 });
-let baseUrl$2 = "https://m4ufree.tv";
+let baseUrl$2 = "https://m4ufree.se";
 const universalScraper$5 = async (ctx) => {
-  var _a, _b, _c;
+  var _a, _b, _c, _d;
   const homePage = await ctx.proxiedFetcher.full(baseUrl$2);
   baseUrl$2 = new URL(homePage.finalUrl).origin;
   const searchSlug = ctx.media.title.replace(/'/g, "").replace(/!|@|%|\^|\*|\(|\)|\+|=|<|>|\?|\/|,|\.|:|;|'| |"|&|#|\[|\]|~|$|_/g, "-").replace(/-+-/g, "-").replace(/^-+|-+$/g, "").replace(/Ă¢â‚¬â€œ/g, "");
@@ -5231,7 +5369,7 @@ const universalScraper$5 = async (ctx) => {
         }
       })
     );
-    const url = iframePage$("iframe").attr("src");
+    const url = (_d = iframePage$("iframe").attr("src")) == null ? void 0 : _d.trim();
     if (!url) continue;
     ctx.progress(100);
     embeds.push({ embedId, url });
@@ -5357,6 +5495,7 @@ async function comboScraper(ctx) {
 const nitesScraper = makeSourcerer({
   id: "nites",
   name: "Nites",
+  disabled: true,
   rank: 90,
   flags: [],
   scrapeMovie: comboScraper,
@@ -6697,7 +6836,8 @@ async function getStreams(title) {
 const primewireScraper = makeSourcerer({
   id: "primewire",
   name: "Primewire",
-  rank: 110,
+  rank: 1,
+  disabled: true,
   flags: [flags.CORS_ALLOWED],
   async scrapeMovie(ctx) {
     if (!ctx.media.imdbId) throw new Error("No imdbId provided");
@@ -6819,7 +6959,21 @@ const smashyStreamScraper = makeSourcerer({
   scrapeMovie: universalScraper$2,
   scrapeShow: universalScraper$2
 });
-const baseUrl = "https://soaper.tv";
+async function convertPlaylistsToDataUrls(fetcher, playlistUrl, headers2) {
+  const playlistData = await fetcher(playlistUrl, { headers: headers2 });
+  const playlist = parse(playlistData);
+  if (playlist.isMasterPlaylist) {
+    await Promise.all(
+      playlist.variants.map(async (variant) => {
+        const variantPlaylistData = await fetcher(variant.uri, { headers: headers2 });
+        const variantPlaylist = parse(variantPlaylistData);
+        variant.uri = `data:application/vnd.apple.mpegurl;base64,${btoa(stringify(variantPlaylist))}`;
+      })
+    );
+  }
+  return `data:application/vnd.apple.mpegurl;base64,${btoa(stringify(playlist))}`;
+}
+const baseUrl = "https://soaper.live";
 const universalScraper$1 = async (ctx) => {
   const searchResult = await ctx.proxiedFetcher("/search.html", {
     baseUrl,
@@ -6873,7 +7027,7 @@ const universalScraper$1 = async (ctx) => {
     if (!language) continue;
     captions.push({
       id: sub.path,
-      url: sub.path,
+      url: `${baseUrl}${sub.path}`,
       type: "srt",
       hasCorsRestrictions: false,
       language
@@ -6884,19 +7038,19 @@ const universalScraper$1 = async (ctx) => {
     stream: [
       {
         id: "primary",
-        playlist: `${baseUrl}/${streamResJson.val}`,
+        playlist: await convertPlaylistsToDataUrls(ctx.proxiedFetcher, `${baseUrl}/${streamResJson.val}`),
         type: "hls",
         proxyDepth: 2,
-        flags: [],
+        flags: [flags.CORS_ALLOWED],
         captions
       },
       ...streamResJson.val_bak ? [
         {
           id: "backup",
-          playlist: `${baseUrl}/${streamResJson.val_bak}`,
+          playlist: await convertPlaylistsToDataUrls(ctx.proxiedFetcher, `${baseUrl}/${streamResJson.val_bak}`),
           type: "hls",
+          flags: [flags.CORS_ALLOWED],
           proxyDepth: 2,
-          flags: [],
           captions
         }
       ] : []
@@ -6907,7 +7061,7 @@ const soaperTvScraper = makeSourcerer({
   id: "soapertv",
   name: "SoaperTV",
   rank: 126,
-  flags: [],
+  flags: [flags.CORS_ALLOWED],
   scrapeMovie: universalScraper$1,
   scrapeShow: universalScraper$1
 });
@@ -6977,11 +7131,42 @@ const universalScraper = async (ctx) => {
 const vidSrcToScraper = makeSourcerer({
   id: "vidsrcto",
   name: "VidSrcTo",
+  disabled: true,
   scrapeMovie: universalScraper,
   scrapeShow: universalScraper,
   flags: [flags.PROXY_BLOCKED],
   rank: 130
 });
+async function getEmbeds(id, servers, ctx) {
+  var _a;
+  const embeds = [];
+  for (const server of servers.split(",")) {
+    await ctx.proxiedFetcher(`/getEmbed.php`, {
+      baseUrl: warezcdnBase,
+      headers: {
+        Referer: `${warezcdnBase}/getEmbed.php?${new URLSearchParams({ id, sv: server })}`
+      },
+      method: "HEAD",
+      query: { id, sv: server }
+    });
+    const embedPage = await ctx.proxiedFetcher(`/getPlay.php`, {
+      baseUrl: warezcdnBase,
+      headers: {
+        Referer: `${warezcdnBase}/getEmbed.php?${new URLSearchParams({ id, sv: server })}`
+      },
+      query: { id, sv: server }
+    });
+    const url = (_a = embedPage.match(/window.location.href\s*=\s*"([^"]+)"/)) == null ? void 0 : _a[1];
+    if (url && server === "warezcdn") {
+      embeds.push(
+        { embedId: warezcdnembedHlsScraper.id, url },
+        { embedId: warezcdnembedMp4Scraper.id, url },
+        { embedId: warezPlayerScraper.id, url }
+      );
+    } else if (url && server === "mixdrop") embeds.push({ embedId: mixdropScraper.id, url });
+  }
+  return { embeds };
+}
 const warezcdnScraper = makeSourcerer({
   id: "warezcdn",
   name: "WarezCDN",
@@ -6992,81 +7177,39 @@ const warezcdnScraper = makeSourcerer({
     const serversPage = await ctx.proxiedFetcher(`/filme/${ctx.media.imdbId}`, {
       baseUrl: warezcdnBase
     });
-    const $ = load(serversPage);
-    const embedsHost = $(".hostList.active [data-load-embed]").get();
-    const embeds = [];
-    embedsHost.forEach(async (element) => {
-      const embedHost = $(element).attr("data-load-embed-host");
-      const embedUrl = $(element).attr("data-load-embed");
-      if (embedHost === "mixdrop") {
-        const realEmbedUrl = await getExternalPlayerUrl(ctx, "mixdrop", embedUrl);
-        if (!realEmbedUrl) throw new Error("Could not find embed url");
-        embeds.push({
-          embedId: mixdropScraper.id,
-          url: realEmbedUrl
-        });
-      } else if (embedHost === "warezcdn") {
-        embeds.push(
-          {
-            embedId: warezcdnembedHlsScraper.id,
-            url: embedUrl
-          },
-          {
-            embedId: warezcdnembedMp4Scraper.id,
-            url: embedUrl
-          }
-        );
-      }
-    });
-    return {
-      embeds
-    };
+    const [, id, servers] = serversPage.match(/let\s+data\s*=\s*'\[\s*\{\s*"id":"([^"]+)".*?"servers":"([^"]+)"/);
+    if (!id || !servers) throw new NotFoundError("Failed to find episode id");
+    return getEmbeds(id, servers, ctx);
   },
   scrapeShow: async (ctx) => {
-    var _a;
+    var _a, _b;
     if (!ctx.media.imdbId) throw new NotFoundError("This source requires IMDB id.");
     const url = `${warezcdnBase}/serie/${ctx.media.imdbId}/${ctx.media.season.number}/${ctx.media.episode.number}`;
     const serversPage = await ctx.proxiedFetcher(url);
-    const episodeId = (_a = serversPage.match(/\$\('\[data-load-episode-content="(\d+)"\]'\)/)) == null ? void 0 : _a[1];
-    if (!episodeId) throw new NotFoundError("Failed to find episode id");
-    const streamsData = await ctx.proxiedFetcher(`/serieAjax.php`, {
-      method: "POST",
+    const seasonsApi = (_a = serversPage.match(/var\s+cachedSeasons\s*=\s*"([^"]+)"/)) == null ? void 0 : _a[1];
+    if (!seasonsApi) throw new NotFoundError("Failed to find data");
+    const streamsData = await ctx.proxiedFetcher(seasonsApi, {
       baseUrl: warezcdnBase,
-      body: new URLSearchParams({
-        getAudios: episodeId
-      }),
       headers: {
-        Origin: warezcdnBase,
         Referer: url,
         "X-Requested-With": "XMLHttpRequest"
       }
     });
-    const streams = JSON.parse(streamsData);
-    const list = streams.list["0"];
-    const embeds = [];
-    if (list.mixdropStatus === "3") {
-      const realEmbedUrl = await getExternalPlayerUrl(ctx, "mixdrop", list.id);
-      if (!realEmbedUrl) throw new Error("Could not find embed url");
-      embeds.push({
-        embedId: mixdropScraper.id,
-        url: realEmbedUrl
-      });
-    }
-    if (list.warezcdnStatus === "3") {
-      embeds.push(
-        {
-          embedId: warezcdnembedHlsScraper.id,
-          url: list.id
-        },
-        {
-          embedId: warezcdnembedMp4Scraper.id,
-          url: list.id
-        }
-      );
-    }
-    return {
-      embeds
-    };
+    const season = Object.values(streamsData.seasons).find((s) => s.name === ctx.media.season.number.toString());
+    if (!season) throw new NotFoundError("Failed to find season id");
+    const episode = (_b = Object.values(season.episodes).find((e) => e.name === ctx.media.season.number.toString())) == null ? void 0 : _b.id;
+    if (!episode) throw new NotFoundError("Failed to find episode id");
+    const episodeData = await ctx.proxiedFetcher("/core/ajax.php", {
+      baseUrl: warezcdnBase,
+      headers: {
+        Referer: url,
+        "X-Requested-With": "XMLHttpRequest"
+      },
+      query: { audios: episode }
+    });
+    const [, id, servers] = episodeData.replace(/\\"/g, '"').match(/"\[\s*\{\s*"id":"([^"]+)".*?"servers":"([^"]+)"/);
+    if (!id || !servers) throw new NotFoundError("Failed to find episode id");
+    return getEmbeds(id, servers, ctx);
   }
 });
 function gatherAllSources() {
@@ -7097,7 +7240,9 @@ function gatherAllSources() {
     tugaflixScraper,
     ee3Scraper,
     whvxScraper,
-    fsharetvScraper
+    fsharetvScraper,
+    redStarScraper,
+    bombtheirishScraper
   ];
 }
 function gatherAllEmbeds() {
@@ -7131,6 +7276,7 @@ function gatherAllEmbeds() {
     vTubeScraper,
     warezcdnembedHlsScraper,
     warezcdnembedMp4Scraper,
+    warezPlayerScraper,
     bflixScraper,
     playm4uNMScraper,
     hydraxScraper,
@@ -7141,11 +7287,16 @@ function gatherAllEmbeds() {
     autoembedTeluguScraper,
     turbovidScraper,
     novaScraper,
-    astraScraper
+    astraScraper,
+    orionScraper,
+    streamwishScraper
   ];
 }
 function getBuiltinSources() {
-  return gatherAllSources().filter((v) => !v.disabled);
+  return gatherAllSources().filter((v) => !v.disabled && !v.externalSource);
+}
+function getBuiltinExternalSources() {
+  return gatherAllSources().filter((v) => v.externalSource && !v.disabled);
 }
 function getBuiltinEmbeds() {
   return gatherAllEmbeds().filter((v) => !v.disabled);
@@ -7169,14 +7320,24 @@ function getProviders(features, list) {
   };
 }
 function makeProviders(ops) {
+  var _a;
   const features = getTargetFeatures(
     ops.proxyStreams ? "any" : ops.target,
     ops.consistentIpForRequests ?? false,
     ops.proxyStreams
   );
+  const sources = [...getBuiltinSources()];
+  if (ops.externalSources === "all") sources.push(...getBuiltinExternalSources());
+  else {
+    (_a = ops.externalSources) == null ? void 0 : _a.forEach((source) => {
+      const matchingSource = getBuiltinExternalSources().find((v) => v.id === source);
+      if (!matchingSource) return;
+      sources.push(matchingSource);
+    });
+  }
   const list = getProviders(features, {
     embeds: getBuiltinEmbeds(),
-    sources: getBuiltinSources()
+    sources
   });
   return makeControls({
     embeds: list.embeds,
@@ -7195,6 +7356,7 @@ function buildProviders() {
   const embeds = [];
   const sources = [];
   const builtinSources = getBuiltinSources();
+  const builtinExternalSources = getBuiltinExternalSources();
   const builtinEmbeds = getBuiltinEmbeds();
   return {
     enableConsistentIpForRequests() {
@@ -7218,7 +7380,7 @@ function buildProviders() {
         sources.push(input);
         return this;
       }
-      const matchingSource = builtinSources.find((v) => v.id === input);
+      const matchingSource = [...builtinSources, ...builtinExternalSources].find((v) => v.id === input);
       if (!matchingSource) throw new Error("Source not found");
       sources.push(matchingSource);
       return this;
@@ -7372,6 +7534,7 @@ export {
   buildProviders,
   flags,
   getBuiltinEmbeds,
+  getBuiltinExternalSources,
   getBuiltinSources,
   makeProviders,
   makeSimpleProxyFetcher,

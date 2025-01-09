@@ -23,6 +23,7 @@ export interface IDownloadCommand {
   error?: any
   progress?: number
   scrapeArgs?: showscrapeArgs | filmscrapeArgs
+  headers?: Record<string, string>
 }
 
 interface scrapeArgs {
@@ -50,7 +51,7 @@ export async function Init() {
   for (const download of downloads) {
     if (download.id == -1) continue;
     // eslint-disable-next-line @typescript-eslint/no-empty-function
-    const cmd = new DownloadCommand(download.url, download.dest, download.name, () => { }, {}, download.type, download.id)
+    const cmd = new DownloadCommand(download.url, download.dest, download.name, () => { }, download.headers ?? {}, download.type, {}, download.id)
     if (download.scrapeArgs) {
       cmd.scrapeArgs = download.scrapeArgs
     }
@@ -77,7 +78,7 @@ export default class DownloadCommand {
     }, 500)
   }
 
-  constructor(private videoURL: string, private dest: string, private name: string, private cb: (success: boolean) => void, captionURLs: Record<string, string>, private type: DownloadType, private id: number = -1) {
+  constructor(private videoURL: string, private dest: string, private name: string, private cb: (success: boolean) => void, captionURLs: Record<string, string>, private type: DownloadType, private headers: Record<string,string>, private id: number = -1) {
     if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true, mode: 0o777 })
     if (this.id == -1) {
       db.addDownloadCommand(this.toJSON('scheduled')).then(id => {
@@ -95,9 +96,9 @@ export default class DownloadCommand {
     try {
       const filepath = join(this.dest, this.name + extname(this.videoURL.split('?')[0]))
       if (this.type == 'hls') {
-        this.downloader = new HlsDownloader(this.videoURL, filepath)
+        this.downloader = new HlsDownloader(this.videoURL, filepath, this.headers)
       } else {
-        this.downloader = new FileDownloader(this.videoURL, filepath)
+        this.downloader = new FileDownloader(this.videoURL, filepath, this.headers)
       }
       this.downloader.init().then((success) => {
         this.cb(success)
@@ -163,6 +164,7 @@ export default class DownloadCommand {
       id: this.id,
       type: this.type,
       scrapeArgs: this.scrapeArgs,
+      headers: this.headers,
       state
     }
   }
@@ -184,12 +186,14 @@ export default class DownloadCommand {
       if (!src) throw new Error('No source found for quality ' + this.scrapeArgs.quality);
       this.videoURL = src.url
     } else if (stream.type == 'hls') {
-      const playlist = await axios.get(stream.playlist, { responseType: 'text' }).catch(() => { throw new Error('Failed to get playlist') })
+      const playlist = await axios.get(stream.playlist, { responseType: 'text', headers: stream.headers }).catch(() => { throw new Error('Failed to get playlist') })
       if (!playlist.data) throw new Error('Failed to get playlist')
       const qualities = parseHlsQuality(playlist.data, stream.playlist)
       const quality = qualities[this.scrapeArgs.quality]
       if (!quality) throw new Error('No source found for quality ' + this.scrapeArgs.quality);
       this.videoURL = quality
+      this.headers = stream.headers ?? {}
+
     }
   }
 }

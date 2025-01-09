@@ -7,56 +7,68 @@ const videoExtensions = ['m4v', 'avi','mpg','mp4', 'webm', 'mov', 'mkv']
 
 /**
  * Format bytes as human-readable text.
- * 
+ *
  * @param bytes Number of bytes.
- * @param si True to use metric (SI) units, aka powers of 1000. False to use 
+ * @param si True to use metric (SI) units, aka powers of 1000. False to use
  *           binary (IEC), aka powers of 1024.
  * @param dp Number of decimal places to display.
- * 
+ *
  * @return Formatted string.
  */
 export function humanFileSize(bytes: number, si=false, dp=1) {
     const thresh = si ? 1000 : 1024;
-  
+
     if (Math.abs(bytes) < thresh) {
       return bytes + ' B';
     }
-  
-    const units = si 
-      ? ['kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'] 
+
+    const units = si
+      ? ['kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB']
       : ['KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB'];
     let u = -1;
     const r = 10**dp;
-  
+
     do {
       bytes /= thresh;
       ++u;
     } while (Math.round(Math.abs(bytes) * r) / r >= thresh && u < units.length - 1);
-  
-  
+
+
     return bytes.toFixed(dp) + ' ' + units[u];
   }
-  
-export function parseHlsQuality(file: string, url: string): Partial<Record<Qualities, string>> {
-  const lines = file.split('\n')
+
+export function parseHlsQuality(file: Buffer, url: string): Partial<Record<Qualities, string>> {
+  const lines = file.toString('utf-8').split('\n')
   const out: Partial<Record<Qualities, string>> = {}
+  const bandwidths: Partial<Record<Qualities, number>> = {};
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     if(line.startsWith('#EXT-X-STREAM-INF')){
-      if(line.match('1080'))
+      // console.log(line)
+      const bandwidth = line.match(/BANDWIDTH=(\d+)/)?.[1]
+      // console.log(bandwidth)
+      if(line.match('1080') && (bandwidths['1080'] ?? 0) <= parseInt(bandwidth || '0')){
         out['1080'] = getUrl(lines[i+1], url);
-      else if(line.match('720'))
+        bandwidths['1080'] = parseInt(bandwidth || '0')
+      }
+      else if(line.match('720') && (bandwidths['720'] ?? 0) <= parseInt(bandwidth || '0')){
         out['720'] = getUrl(lines[i+1], url)
-      else if(line.match('480'))
+        bandwidths['720'] = parseInt(bandwidth || '0')
+      }
+      else if(line.match('480') && (bandwidths['480'] ?? 0) <= parseInt(bandwidth || '0')){
         out['480'] = getUrl(lines[i+1], url)
-      else if(line.match('2160'))
+        bandwidths['480'] = parseInt(bandwidth || '0')
+      }
+      else if(line.match('2160') && (bandwidths['4k'] ?? 0) <= parseInt(bandwidth || '0')){
         out['4k'] = getUrl(lines[i+1], url)
-      else if(line.match('360'))
+        bandwidths['4k'] = parseInt(bandwidth || '0')
+      }
+      else if(line.match('360') && (bandwidths['360'] ?? 0) <= parseInt(bandwidth || '0')){
         out['360'] = getUrl(lines[i+1], url)
+        bandwidths['360'] = parseInt(bandwidth || '0')
+      }
     }
   }
-  console.log(out);
-  
   return out
 }
 
